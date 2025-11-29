@@ -229,7 +229,13 @@ msg "创建目标目录: $RootFs"
 mkdir -p "$RootFs"
 
 msg "解压 tarball..."
-tar -xpf "$TAR_FILE" -C "$RootFs"
+if ! tar -xpf "$TAR_FILE" -C "$RootFs"; then
+    error "'$TAR_BASENAME' 似乎不是 tar 归档文件, 请检查发行版 $Distro 是否存在版本 $Version"
+    rm -f "$TAR_FILE"
+    rm -f "$SUM_FILE"
+    rm -rf "$RootFs"
+    exit 1
+fi
 
 msg "进行后续处理..."
 post_configure "$RootFs"
