@@ -7,3 +7,7 @@
 ## 快速开始
 
 wget ... | ...
+
+## Credits
+
+User interface logic (lib/message.sh) is derived from Arch Linux Pacman.
