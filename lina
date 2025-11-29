@@ -13,7 +13,7 @@ if [ -z "$1" ]; then
         [ -x "$File" ] || continue
         Cmds="$Cmds, ${File##*chroot-}"
     done
-    
+
     echo "用法: $Self <指令> [参数...]"
     echo "可用指令: ${Cmds#, }"
     exit 1
