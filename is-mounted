@@ -1,0 +1,16 @@
+#!/system/bin/sh
+
+SRC="$1"
+TGT="$2"
+
+# 如果目标是挂载点（设备 ID 与父目录不同），视为成功
+if [ "$(stat -c '%d' "$TGT" 2> /dev/null)" != "$(stat -c '%d' "$TGT/.." 2> /dev/null)" ]; then
+    exit 0
+fi
+
+# 如果源与目标是同一个文件（设备 ID 和 inode 相同），视为成功
+if [ -e "$SRC" ] && [ "$(stat -c '%d:%i' "$SRC" 2> /dev/null)" = "$(stat -c '%d:%i' "$TGT" 2> /dev/null)" ]; then
+    exit 0
+fi
+
+exit 1

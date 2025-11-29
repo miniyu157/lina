@@ -1,0 +1,29 @@
+#!/system/bin/sh
+
+ScriptDir="$(cd "$(dirname "$0")" && pwd)"
+Self="${0##*/}"
+BinDir="$ScriptDir/$Self-bin"
+
+if [ -z "$1" ]; then
+    Cmds=""
+    for File in "$BinDir"/chroot-*; do
+        [ -x "$File" ] || continue
+        Cmds="$Cmds, ${File##*chroot-}"
+    done
+    
+    echo "用法: $Self <指令> [参数...]"
+    echo "可用指令: ${Cmds#, }"
+    exit 1
+fi
+
+Action="$1"
+shift
+TargetScript="$BinDir/chroot-$Action"
+
+if [ -x "$TargetScript" ]; then
+    exec "$TargetScript" "$@"
+else
+    echo "错误: 未知的指令 '$Action'" >&2
+    echo "请运行 '$Self' 以查看可用指令。" >&2
+    exit 1
+fi

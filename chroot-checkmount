@@ -1,0 +1,76 @@
+#!/system/bin/sh
+
+# shellcheck shell=ksh
+
+if [ "$(id -u)" -ne 0 ]; then
+    current_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    quoted_args=$(printf " %q" "$@")
+    exec su -M -c "exec '$current_script'$quoted_args"
+fi
+ScriptDir="$(cd "$(dirname "$0")" && pwd)"
+
+# 启用此段以使用 makepkg 风格输出
+if [[ ! -f "$ScriptDir/lib/message.sh" ]]; then
+    echo "错误: 未找到 $ScriptDir/lib/message.sh" >&2
+    exit 1
+fi
+source "$ScriptDir/lib/message.sh"
+QUIET=0
+colorize
+
+# 启用此行以使用其它自定义脚本
+PATH="$ScriptDir:$PATH"
+# 启用以下两行以使用 Termux 中的二进制程序和库
+#export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
+#PATH="/data/data/com.termux/files/usr/bin:$PATH"
+
+BasePath="/data/local/chroot"
+
+usage() {
+    cat << EOF
+检查 chroot 环境的文件系统挂载。
+
+用法: ${0##*/} <Name>
+
+参数:
+  Name    chroot 环境的名称
+EOF
+    exit 1
+}
+
+Name="$1"
+[[ -z "$Name" ]] && {
+    error "未提供名称。"
+    usage 1
+}
+RootFs="$BasePath/$Name"
+[[ -d "$RootFs" ]] || {
+    error "目录 '$RootFs' 不存在。"
+    exit 1
+}
+
+OVERALL_STATUS=1
+
+check_mount() {
+    local src="$1"
+    local tgt="$2"
+
+    if is-mounted "$src" "$tgt"; then
+        msg2g "已挂载: %s" "$tgt"
+        OVERALL_STATUS=0
+        return 0
+    else
+        msg2 "未挂载: %s" "$tgt"
+        return 1
+    fi
+}
+
+check_mount "/data/data/com.termux/files/usr/tmp" "$RootFs/tmp"
+check_mount /dev "$RootFs/dev"
+check_mount devpts "$RootFs/dev/pts"
+check_mount tmpfs "$RootFs/dev/shm"
+check_mount proc "$RootFs/proc"
+check_mount sysfs "$RootFs/sys"
+check_mount /sdcard "$RootFs/sdcard"
+
+exit $OVERALL_STATUS

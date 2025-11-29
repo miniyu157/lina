@@ -1,0 +1,105 @@
+#!/data/data/com.termux/files/usr/bin/bash
+
+ScriptDir="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "$ScriptDir/lib/message.sh" ]]; then
+    # shellcheck disable=SC1091
+    source "$ScriptDir/lib/message.sh"
+    # shellcheck disable=SC2034
+    QUIET=0
+else
+    echo "无法找到库文件: $ScriptDir/lib/message.sh" >&2
+    exit 1
+fi
+colorize
+
+if [ "$(id -u)" -ne 0 ]; then
+    TermuxPrefix="/data/data/com.termux/files/usr"
+    TermuxX11="$TermuxPrefix/bin/termux-x11"
+
+    msg "清理残留进程..."
+    killall -9 termux-x11 2> /dev/null || true
+
+    if [ ! -x "$TermuxX11" ]; then
+        error "未找到命令 termux-x11, 使用 'pkg install termux-x11-nightly' 以安装。"
+        exit 1
+    fi
+
+    msg "启动 X11 服务 (DISPLAY:2)..."
+    "$TermuxX11" :2 -dpi 96 > /dev/null 2>&1 &
+
+    msg2 "唤起 Termux:X11 应用..."
+    if ! am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity > /dev/null 2>&1; then
+        error "唤起失败, 请检查是否已安装 Termux:X11 APP。"
+        exit 1
+    fi
+
+    XSocket="$TermuxPrefix/tmp/.X11-unix/X2"
+    msg2 "等待套接字就绪..."
+    while [ ! -S "$XSocket" ]; do sleep 0.2; done
+
+    # shellcheck disable=SC2016
+    exec su -M -c 'exec "$0" "$@"' "$0" "$@"
+fi
+
+usage() {
+    cat << EOF
+用法: $0 [Name]
+  [Name] - chroot 环境的名称
+EOF
+    exit 1
+}
+
+Name="$1"
+if [ -z "$Name" ]; then
+    error "未提供名称。"
+    usage
+fi
+FileSystem="/data/local/chroot/$Name"
+if [ ! -d "$FileSystem" ]; then
+    error "目录 '$FileSystem' 不存在。"
+    exit 1
+fi
+
+LoginUser="${2:-root}"
+
+msg "Chroot 并设置环境..."
+
+exec unshare -u chroot "$FileSystem" /bin/sh -s "$LoginUser" <<- 'EOF' &
+    [ -f /etc/hostname ] && cat /etc/hostname > /proc/sys/kernel/hostname
+   
+    LoginUser=$1
+    DefaultShell=$(getent passwd $1 | cut -d: -f7)
+    
+    [ -d /dev/dri ] && chmod 666 /dev/dri/*
+    [ -c /dev/kgsl-3d0 ] && chmod 666 /dev/kgsl-3d0
+    
+    mkdir -p /tmp/.ICE-unix
+    chown root:root /tmp/.ICE-unix
+    chmod 1777 /tmp/.ICE-unix
+    
+    su - "$LoginUser" -s /bin/bash -c '
+        # Display
+        export DISPLAY=:2
+        export XDG_RUNTIME_DIR=/tmp/runtime-$(id -u)
+        
+        # VSCode
+        export LIBGL_ALWAYS_SOFTWARE=0
+        export COGL_RENDERER=gl3
+        
+        # Turnip/Zink Graphics Acceleration
+        export MESA_LOADER_DRIVER_OVERRIDE=zink
+        export TU_DEBUG=noconform
+        export ZINK_DESCRIPTORS=lazy
+        export ZINK_DEBUG=compact
+        export TU_KGSL_PATH=/dev/kgsl-3d0
+        
+        if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+            mkdir -p "$XDG_RUNTIME_DIR"
+            chmod 700 "$XDG_RUNTIME_DIR"
+        fi
+        
+        export SHELL="'"$DefaultShell"'"
+        exec dbus-run-session startxfce4 >> "$HOME/startxfce4.log" 2>&1
+        # exec dbus-launch --exit-with-session startxfce4 >> "$HOME/startxfce4.log" 2>&1
+    '
+EOF

@@ -1,0 +1,244 @@
+#!/system/bin/sh
+
+# shellcheck shell=ksh
+
+if [ "$(id -u)" -ne 0 ]; then
+    current_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    quoted_args=$(printf " %q" "$@")
+    exec su -M -c "exec '$current_script'$quoted_args"
+fi
+ScriptDir="$(cd "$(dirname "$0")" && pwd)"
+
+# 启用此段以使用 makepkg 风格输出
+if [[ ! -f "$ScriptDir/lib/message.sh" ]]; then
+    echo "错误: 未找到 $ScriptDir/lib/message.sh" >&2
+    exit 1
+fi
+source "$ScriptDir/lib/message.sh"
+QUIET=0
+colorize
+
+# 启用此行以使用其它自定义脚本
+#PATH="$ScriptDir:$PATH"
+# 启用以下两行以使用 Termux 中的二进制程序和库
+#export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
+#PATH="/data/data/com.termux/files/usr/bin:$PATH"
+
+BasePath="/data/local/chroot"
+
+usage() {
+    cat << EOF
+部署官方纯净的 Linux Chroot 环境。
+
+用法: ${0##*/} <distro:version> [选项...] [Name]
+
+参数:
+  distro:version    发行版及版本 (如 arch:latest, ubuntu:22.04, alpine:3.21.0)
+  Name              自定义环境名称 (可选, 默认跟随 distro 名称)
+
+选项:
+  -n, --name <name> 指定 chroot 环境的名称 (同位置参数 Name)
+  -l, --list        列出可用的发行版
+  -h, --help        显示此帮助信息
+EOF
+    exit 1
+}
+
+list_distros() {
+    cat << EOF
+支持的发行版列表:
+
+  Arch Linux
+    - arch:latest
+
+  Ubuntu Base
+    - ubuntu:24.04
+    - ubuntu:22.04
+    - ...
+  
+  Alpine Linux
+    - alpine:3.22.0
+    - alpine:3.22.0_rc3
+    - ...
+EOF
+    exit 0
+}
+
+Name=""
+DistroInput=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -l | --list)
+            list_distros
+            ;;
+        -n | --name)
+            Name="$2"
+            shift 2
+            ;;
+        -h | --help)
+            usage
+            ;;
+        *:*)
+            DistroInput="$1"
+            shift
+            ;;
+        *)
+            # 如果没有指定 -n，且不是 distro:ver 格式，则认为是 Name
+            if [[ -z "$Name" ]]; then
+                Name="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$DistroInput" ]]; then
+    error "未指定发行版 (distro:version)。"
+    usage
+fi
+
+Distro="${DistroInput%%:*}"
+Version="${DistroInput##*:}"
+
+Name="${Name:-$Distro}"
+RootFs="$BasePath/$Name"
+if [[ -d "$RootFs" ]]; then
+    error "目录 '$RootFs' 已存在。"
+    exit 1
+fi
+
+get_meta() {
+    case "$Distro" in
+        arch)
+            TAR_BASENAME="ArchLinuxARM-aarch64-latest.tar.gz"
+            TAR_URL="http://os.archlinuxarm.org/os/${TAR_BASENAME}"
+            MD5_BASENAME="${TAR_BASENAME}.md5"
+            MD5_URL="http://os.archlinuxarm.org/os/${MD5_BASENAME}"
+
+            SUM_FILE="${BasePath}/${MD5_BASENAME}"
+            SUM_URL="$MD5_URL"
+            SUM_CMD="md5sum"
+            ;;
+        ubuntu)
+            TAR_BASENAME="ubuntu-base-${Version}-base-arm64.tar.gz"
+            TAR_URL="https://cdimage.ubuntu.com/ubuntu-base/releases/${Version}/release/${TAR_BASENAME}"
+            SUM_BASENAME="SHA256SUMS"
+
+            SUM_FILE="${BasePath}/ubuntu-${Version}-${SUM_BASENAME}"
+            SUM_URL="https://cdimage.ubuntu.com/ubuntu-base/releases/${Version}/release/${SUM_BASENAME}"
+            SUM_CMD="sha256sum"
+            ;;
+        alpine)
+            local AlpineVer="${Version%.*}"
+
+            TAR_BASENAME="alpine-minirootfs-${Version}-aarch64.tar.gz"
+            TAR_URL="https://dl-cdn.alpinelinux.org/alpine/v${AlpineVer}/releases/aarch64/${TAR_BASENAME}"
+            SHA256_BASENAME="${TAR_BASENAME}.sha256"
+            SHA256_URL="https://dl-cdn.alpinelinux.org/alpine/v${AlpineVer}/releases/aarch64/${SHA256_BASENAME}"
+
+            SUM_FILE="${BasePath}/${SHA256_BASENAME}"
+            SUM_URL="$SHA256_URL"
+            SUM_CMD="sha256sum"
+            ;;
+        *)
+            error "不支持的发行版: $Distro"
+            exit 1
+            ;;
+    esac
+    TAR_FILE="${BasePath}/${TAR_BASENAME}"
+}
+
+post_configure() {
+    local rootfs="$1"
+
+    if [ -L "$rootfs/etc/resolv.conf" ] || [ -f "$rootfs/etc/resolv.conf" ]; then
+        msg2 "修复 DNS 文件..."
+        rm -f "$rootfs/etc/resolv.conf"
+        echo "nameserver 8.8.8.8" > "$rootfs/etc/resolv.conf"
+    fi
+
+    msg2 "设置 hosts..."
+    cat > "$rootfs/etc/hosts" << EOF
+127.0.0.1       localhost
+::1             ip6-localhost
+EOF
+
+    # 发行版特定处理
+    case "$Distro" in
+        arch) ;;
+        ubuntu) ;;
+        alpine) ;;
+        kali) ;;
+    esac
+}
+
+get_meta
+
+msg "获取校验文件..."
+curl -sL -o "$SUM_FILE" "$SUM_URL"
+if [ ! -f "$SUM_FILE" ]; then
+    error "下载校验文件失败。"
+    exit 1
+fi
+
+cd "$BasePath" || exit 1
+
+check_sum() {
+    local sumfile="$2"
+
+    if [[ "$Distro" == "arch" || "$Distro" == "alpine" ]]; then
+        "$SUM_CMD" -c "$sumfile" > /dev/null 2>&1
+    elif [[ "$Distro" == "ubuntu" ]]; then
+        # Ubuntu 的校验文件包含列表，必须先 grep 过滤出当前文件
+        grep "$TAR_BASENAME" "$sumfile" | "$SUM_CMD" -c > /dev/null 2>&1
+    fi
+}
+
+if [ -f "$TAR_FILE" ]; then
+    msg "发现本地 tarball。正在校验, 使用 ${SUM_CMD%%sum}..."
+    if check_sum "$TAR_FILE" "$SUM_FILE"; then
+        msg2 "校验和通过, 跳过下载。"
+    else
+        msg2 "校验和错误, 重新下载。"
+        rm -f "$TAR_FILE"
+        curl -L -o "$TAR_FILE" "$TAR_URL"
+    fi
+else
+    msg "获取 tarball..."
+    msg2 "下载 $TAR_BASENAME..."
+    curl -L -o "$TAR_FILE" "$TAR_URL"
+fi
+
+if [ ! -f "$TAR_FILE" ]; then
+    error "下载失败。"
+    rm -f "$SUM_FILE"
+    exit 1
+fi
+
+if ! check_sum "$TAR_FILE" "$SUM_FILE"; then
+    error "下载文件校验失败。"
+    rm -f "$SUM_FILE"
+    exit 1
+fi
+
+msg "创建目标目录: $RootFs"
+mkdir -p "$RootFs"
+
+msg "解压 tarball..."
+tar -xpf "$TAR_FILE" -C "$RootFs"
+
+msg "进行后续处理..."
+post_configure "$RootFs"
+
+rm -f "$SUM_FILE"
+
+msg "安装完成: $Name ($DistroInput)"
+msg2 "Tarball 保留在: $TAR_FILE"
+
+echo ""
+
+plain "提示信息:"
+plain "  1) 使用 'chroot-mount $Name' 挂载文件系统"
+plain "  2) 使用 'chroot-linux $Name' 进行登录"
+plain "  3) 更多信息查看 https://github.com/miniyu157/android-chroot-linux"
