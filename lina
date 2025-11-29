@@ -9,6 +9,8 @@ ScriptDir="$(cd "$(dirname "$0")" && pwd)"
 Self="${0##*/}"
 BinDir="$ScriptDir/$Self-bin"
 
+sh $BinDir/lina-update > /dev/null 2>&1 &
+
 G=$'\e[1;30m'
 W=$'\e[0m'
 B=$'\e[1m'
