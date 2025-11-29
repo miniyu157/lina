@@ -22,8 +22,7 @@ fi
 
 FMT="%-16s %-12s %-10s\n"
 
-printf "$FMT" "name" "process" "ismounted"
-printf "$FMT" "----" "-------" "---------"
+printf "$FMT" "NAME" "PROC" "MOUNTED"
 
 for dir in "$BasePath"/*; do
     if [ -d "$dir" ]; then
