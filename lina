@@ -9,6 +9,13 @@ ScriptDir="$(cd "$(dirname "$0")" && pwd)"
 Self="${0##*/}"
 BinDir="$ScriptDir/$Self-bin"
 
+[[ -f "$BinDir/update.lock" ]] && {
+    echo "$Self 上次启动时进行了更新, 更新内容是:"
+    cat "$BinDir/update.lock"
+    rm -f "$BinDir/update.lock"
+    echo ""
+}
+
 sh $BinDir/lina-update > /dev/null 2>&1 &
 
 G=$'\e[1;30m'

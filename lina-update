@@ -5,6 +5,14 @@
 
 # shellcheck shell=ksh
 
-git fetch
-git reset --hard origin/main
+# 记录更新前的指针
+old_head=$(git rev-parse HEAD)
+
+git fetch -q
+git reset --hard origin/main >/dev/null 2>&1
 # git clean -fdx
+
+# 只有当指针发生移动时才记录日志
+if [ "$old_head" != "$(git rev-parse HEAD)" ]; then
+    git show -s --format='%ci%n%s' HEAD > update.lock
+fi
