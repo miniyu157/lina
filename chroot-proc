@@ -1,153 +1,190 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/system/bin/sh
 
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2025 Yumeka <miniyu157@163.com>
 
-set -e
+# shellcheck shell=ksh
+# shellcheck disable=SC2086
 
 if [ "$(id -u)" -ne 0 ]; then
-    # shellcheck disable=SC2016
-    exec su -M -c 'exec "$0" "$@"' "$0" "$@"
+    current_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    quoted_args=$(printf " %q" "$@")
+    exec su -M -c "exec '$current_script'$quoted_args"
 fi
-
 ScriptDir="$(cd "$(dirname "$0")" && pwd)"
-if [[ -f "$ScriptDir/lib/message.sh" ]]; then
-    # shellcheck disable=SC1091
-    source "$ScriptDir/lib/message.sh"
-    # shellcheck disable=SC2034
-    QUIET=0
-else
-    echo "无法找到库文件: $ScriptDir/lib/message.sh" >&2
+
+# 启用此段以使用 makepkg 风格输出
+if [[ ! -f "$ScriptDir/lib/message.sh" ]]; then
+    echo "错误: 未找到 $ScriptDir/lib/message.sh" >&2
     exit 1
 fi
+source "$ScriptDir/lib/message.sh"
+QUIET=0
 colorize
 
+# 启用此行以使用其它自定义脚本
+#PATH="$ScriptDir:$PATH"
+# 启用以下两行以使用 Termux 中的二进制程序和库
+export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
+PATH="/data/data/com.termux/files/usr/bin:$PATH"
+
+BasePath="/data/local/chroot"
 DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
 DisplayCmd="${DisplayCmd:-${0##*/}}"
 
 usage() {
     cat << EOF
-管理 chroot 环境中的进程。
+管理 chroot 环境的进程。
 
-用法: $DisplayCmd <Name> [Action]
-  Name        chroot 环境名称
-  Action      操作模式:
-    list   - (默认) 列出详细进程表
-    pids   - 仅输出 PID 列表
-    kill   - 优雅终止环境下的所有进程
+用法:
+  $DisplayCmd    [Name] [模式=ps]    选择指定名称的环境进行操作
+  $DisplayCmd    -h                  显示此帮助信息
+
+参数:
+  Name           chroot 环境的名称, 若省略则并在 ps 模式下遍历所有环境
+
+模式:
+  pids           列出环境中所有进程的 PID
+  ka             终止环境中的所有进程 (静默模式)
+  ps             列出一个表格, 包含环境中所有进程的信息
 EOF
-    exit 1
+    exit "${1:-0}"
 }
 
-Name="$1"
-if [ -z "$Name" ]; then
-    error "未提供名称。"
-    usage
-fi
-FileSystem="/data/local/chroot/$Name"
-if [ ! -d "$FileSystem" ]; then
-    error "目录 '$FileSystem' 不存在。"
-    exit 1
+TargetName=""
+Mode="ps"
+
+if [[ -n "$1" ]]; then
+    case "$1" in
+        pids | ka | ps)
+            Mode="$1"
+            ;;
+        -h | --help)
+            usage 0
+            ;;
+        *)
+            TargetName="$1"
+            Mode="${2:-ps}"
+            ;;
+    esac
 fi
 
-PsPath="/data/data/com.termux/files/usr/bin/ps"
-AwkPath="/data/data/com.termux/files/usr/bin/awk"
+if [[ -n "$TargetName" ]]; then
+    SearchTarget="$BasePath/$TargetName"
+    if [[ ! -d "$SearchTarget" ]]; then
+        error "目录 '$SearchTarget' 不存在。"
+        exit 1
+    fi
+else
+    SearchTarget="$BasePath/*"
+fi
 
 get_pids() {
-    # shellcheck disable=SC2016
-    find /proc/[0-9]*/root -lname "$FileSystem" 2> /dev/null | "$AwkPath" -F'/' '{print $3}'
+    find /proc/[0-9]*/root -lname "$SearchTarget" 2> /dev/null | while read -r _path; do
+        _t="${_path#/proc/}"
+        echo "${_t%/root}"
+    done
 }
 
-show_list() {
-    _pids=$(get_pids | paste -sd, -)
+show_ps() {
+    printf "%-5s %-6s %-12s %s\n" "UID" "PID" "NAME" "COMMAND"
 
-    if [ -z "$_pids" ]; then
-        msg "无正在运行的进程。"
-        return 0
-    fi
+    _pids=$(get_pids)
+    [[ -z "$_pids" ]] && return 0
 
-    GRAY=$(printf '\033[90m')
-    RESET=$(printf '\033[0m')
+    _GRAY=$(printf '\033[90m')
+    _RESET=$(printf '\033[0m')
 
-    "$PsPath" -p "$_pids" -o uid,pid,ppid,cmd,%cpu,%mem,rss,vsz --no-headers \
-        | while IFS= read -r line; do
-            # 提取第3列 (PPID) 用于判断颜色
-            # shellcheck disable=SC2016
-            current_ppid=$(echo "$line" | "$AwkPath" '{print $3}')
+    echo "$_pids" | while read -r _pid; do
+        [[ -z "$_pid" ]] && continue
 
-            if [ "$current_ppid" -ne 1 ] 2> /dev/null; then
-                printf "%s%s%s\n" "$GRAY" "$line" "$RESET"
+        _uid=""
+        _ppid=""
+        if [[ -r "/proc/$_pid/status" ]]; then
+            while read -r _line; do
+                case "$_line" in
+                    Uid:*)
+                        # Uid: real effective saved_set fs
+                        set -- ${_line#Uid:}
+                        _uid="$1"
+                        ;;
+                    PPid:*)
+                        set -- ${_line#PPid:}
+                        _ppid="$1"
+                        ;;
+                esac
+                [[ -n "$_uid" && -n "$_ppid" ]] && break
+            done < "/proc/$_pid/status"
+        fi
+
+        if [[ -n "$TargetName" ]]; then
+            _name="$TargetName"
+        else
+            if _link=$(readlink "/proc/$_pid/root" 2> /dev/null); then
+                _name="${_link##*/}"
             else
-                printf "%s\n" "$line"
+                _name="?"
             fi
-        done
+        fi
+
+        _cmd=""
+        if [[ -r "/proc/$_pid/cmdline" ]]; then
+            _cmd=$(tr '\0' ' ' < "/proc/$_pid/cmdline")
+        fi
+        if [[ -z "$_cmd" && -r "/proc/$_pid/comm" ]]; then
+            read -r _cmd < "/proc/$_pid/comm"
+            _cmd="[$_cmd]"
+        fi
+
+        _line_str=$(printf "%-5s %-6s %-12s %s" "${_uid:-?}" "$_pid" "${_name:-?}" "${_cmd:-?}")
+
+        if [[ "$_ppid" -ne 1 ]] 2> /dev/null; then
+            printf "%s%s%s\n" "$_GRAY" "$_line_str" "$_RESET"
+        else
+            printf "%s\n" "$_line_str"
+        fi
+    done
 }
 
 do_kill() {
-    _pids="$(get_pids)"
+    _pids=$(get_pids)
 
-    if [ -z "$_pids" ]; then
-        msg "无需清理。"
-        return 0
-    fi
-
-    msg "正在清理进程..."
+    [[ -z "$_pids" ]] && return 0
 
     # 发送 SIGTERM
-    for pid in $_pids; do
-        if kill -0 "$pid" 2> /dev/null; then
-            kill -15 "$pid" 2> /dev/null
-        fi
+    for _pid in $_pids; do
+        kill -15 "$_pid" 2> /dev/null
     done
 
-    # 记录哪些进程已经打印过
-    _terminated=""
-
-    # 等待退出
-    _timeout=5
+    # 等待退出循环
+    _timeout=50 # 5秒 (50 * 0.1s)
     _count=0
+
     while [ "$_count" -lt "$_timeout" ]; do
-        _alive=0
-        for pid in $_pids; do
-
-            # 尚未退出
-            if kill -0 "$pid" 2> /dev/null; then
-                _alive=1
-                continue
+        _alive_count=0
+        for _pid in $_pids; do
+            if kill -0 "$_pid" 2> /dev/null; then
+                _alive_count=$((_alive_count + 1))
             fi
-
-            # 已经退出，并且还没打印过
-            case " $_terminated " in
-                *" $pid "*) ;;
-                *)
-                    msg2 "SIGTERM: $pid"
-                    _terminated="$_terminated $pid"
-                    ;;
-            esac
         done
 
-        [ "$_alive" -eq 0 ] && break
+        [ "$_alive_count" -eq 0 ] && break
 
-        sleep 1
+        sleep 0.1
         _count=$((_count + 1))
     done
 
-    # 发送 SIGKILL
-    for pid in $_pids; do
-        if kill -0 "$pid" 2> /dev/null; then
-            if kill -9 "$pid" 2> /dev/null; then
-                msg2 "SIGKILL: $pid"
-            fi
+    # 发送 SIGKILL 给剩余进程
+    for _pid in $_pids; do
+        if kill -0 "$_pid" 2> /dev/null; then
+            kill -9 "$_pid" 2> /dev/null
         fi
     done
-
-    msg "清理完成。"
-
 }
 
-case "${2:-list}" in
-    list) show_list ;;
+case "$Mode" in
+    ps) show_ps ;;
     pids) get_pids ;;
-    kill | ka) do_kill ;;
-    *) usage ;;
+    ka) do_kill ;;
+    *) usage 1 ;;
 esac
