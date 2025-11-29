@@ -106,10 +106,16 @@ fi
 Distro="${DistroInput%%:*}"
 Version="${DistroInput##*:}"
 
+[[ -z "$Name" ]] && PendingName=1
+
 Name="${Name:-$Distro}"
 RootFs="$BasePath/$Name"
 if [[ -d "$RootFs" ]]; then
-    error "目录 '$RootFs' 已存在。"
+    ErrorMessage="目录 '$RootFs' 已存在。"
+    [[ -n "$PendingName" ]] \
+        && ErrorMessage="$ErrorMessage 请用 -n 指定另外一个名称。"
+
+    error "$ErrorMessage"
     exit 1
 fi
 
