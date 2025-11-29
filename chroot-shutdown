@@ -98,7 +98,10 @@ else
     usage
 fi
 
+Pfx="${LINA_ENTRY:+$LINA_ENTRY }"
+Pfx="${Pfx:-chroot-}"
+
 echo ""
 plain "提示信息:"
-plain "  使用 'chroot-status' 命令以确认"
+plain "  使用 '${Pfx}status' 命令以确认"
 plain "  此命令可能不可靠，应该手动确认环境是否完全清理。"
