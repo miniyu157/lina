@@ -3,9 +3,21 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2025 Yumeka <miniyu157@163.com>
 
+# shellcheck shell=ksh
+
 ScriptDir="$(cd "$(dirname "$0")" && pwd)"
 Self="${0##*/}"
 BinDir="$ScriptDir/$Self-bin"
+
+G=$'\e[1;30m'
+W=$'\e[0m'
+B=$'\e[1m'
+
+paint() {
+    sed -e "s/%B/$B/g" \
+        -e "s/%G/$G/g" \
+        -e "s/%W/$W/g"
+}
 
 if [ -z "$1" ]; then
     Cmds=""
@@ -14,8 +26,24 @@ if [ -z "$1" ]; then
         Cmds="$Cmds, ${File##*chroot-}"
     done
 
-    echo "用法: $Self <指令> [参数...]"
-    echo "可用指令: ${Cmds#, }"
+    cat << 'EOF' | paint
+
+%G  .---.    %W%B.-./`)%W%G ,---.   .--.   ____     %W
+%G  | %W%B,_%W%G|    %W%B\ .-.')%W%G|    \  |  | .'  __ `.  %W
+%G%W%B,-./  )    / `-' \%W%G|  ,  \ |  |/   '  \  \ %W
+%G%W%B\  '_ '`)   `-'`"`%W%G|  |\_ \|  ||___|  /  | %W
+%G%W%B > (_)  )%W%G   .---. |  %W%B_( )_%W%G\  |   _.-`   | %W
+%G%W%B(  .  .-'%W%G   |   | | %W%B(_ o _)%W%G  |.'   %W%B_%W%G    | %W
+%G %W%B`-'`-'%W%G|___ |   | |  %W%B(_,_)%W%G\  ||  %W%B_( )_%W%G  | %W
+%G  |        \|   | |  |    |  |\ %W%B(_ o _)%W%G / %W
+%G  `--------`'---' '--'    '--' '.%W%B(_,_)%W%G.'  %W
+
+EOF
+
+    cat << EOF
+用法: $Self <指令> [参数...]
+可用指令: ${Cmds#, }
+EOF
     exit 1
 fi
 
