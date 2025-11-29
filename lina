@@ -23,6 +23,10 @@ if [ -z "$1" ]; then
     Cmds=""
     for File in "$BinDir"/chroot-*; do
         [ -x "$File" ] || continue
+        case ${File##*/} in
+            *.test) ;;
+            *.*) continue ;;
+        esac
         Cmds="$Cmds, ${File##*chroot-}"
     done
 
