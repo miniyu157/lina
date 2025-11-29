@@ -28,14 +28,16 @@ colorize
 #PATH="/data/data/com.termux/files/usr/bin:$PATH"
 
 BasePath="/data/local/chroot"
+DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
+DisplayCmd="${DisplayCmd:-${0##*/}}"
 
 usage() {
     cat << EOF
 进入 chroot 根文件系统。
 
 用法:
-  ${0##*/} <Name> - [User] [选项...]
-  ${0##*/} <Name> [选项...]
+  $DisplayCmd <Name> - [User] [选项...]
+  $DisplayCmd <Name> [选项...]
 
 参数:
   Name          chroot 环境的名称

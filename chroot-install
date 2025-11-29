@@ -28,12 +28,14 @@ colorize
 #PATH="/data/data/com.termux/files/usr/bin:$PATH"
 
 BasePath="/data/local/chroot"
+DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
+DisplayCmd="${DisplayCmd:-${0##*/}}"
 
 usage() {
     cat << EOF
 部署官方纯净的 Linux Chroot 环境。
 
-用法: ${0##*/} <distro:version> [选项...] [Name]
+用法: $DisplayCmd <distro:version> [选项...] [Name]
 
 参数:
   distro:version    发行版及版本 (如 arch:latest, ubuntu:22.04, alpine:3.21.0)
@@ -247,7 +249,10 @@ msg2 "Tarball 保留在: $TAR_FILE"
 
 echo ""
 
+Pfx="${LINA_ENTRY:+$LINA_ENTRY }"
+Pfx="${Pfx:-chroot-}"
+
 plain "提示信息:"
-plain "  1) 使用 'chroot-mount $Name' 挂载文件系统"
-plain "  2) 使用 'chroot-linux $Name' 进行登录"
-plain "  3) 更多信息查看 https://github.com/miniyu157/android-chroot-linux"
+plain "  1) 使用 '${Pfx}mount $Name' 挂载文件系统"
+plain "  2) 使用 '${Pfx}enter $Name' 进行登录"
+plain "  3) 更多信息查看 https://github.com/miniyu157/lina"

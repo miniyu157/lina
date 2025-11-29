@@ -15,6 +15,9 @@ else
 fi
 colorize
 
+DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
+DisplayCmd="${DisplayCmd:-${0##*/}}"
+
 if [ "$(id -u)" -ne 0 ]; then
     TermuxPrefix="/data/data/com.termux/files/usr"
     TermuxX11="$TermuxPrefix/bin/termux-x11"
@@ -46,7 +49,7 @@ fi
 
 usage() {
     cat << EOF
-用法: $0 [Name]
+用法: $DisplayCmd [Name]
   [Name] - chroot 环境的名称
 EOF
     exit 1

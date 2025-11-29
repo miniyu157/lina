@@ -24,6 +24,8 @@ shift
 TargetScript="$BinDir/chroot-$Action"
 
 if [ -x "$TargetScript" ]; then
+    export LINA_ENTRY="$Self"
+    export LINA_ACTION="$Action"
     exec "$TargetScript" "$@"
 else
     echo "错误: 未知的指令 '$Action'" >&2

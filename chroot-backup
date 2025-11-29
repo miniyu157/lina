@@ -28,12 +28,14 @@ export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
 PATH="/data/data/com.termux/files/usr/bin:$PATH"
 
 BasePath="/data/local/chroot"
+DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
+DisplayCmd="${DisplayCmd:-${0##*/}}"
 
 usage() {
     cat << EOF
 归档 chroot 根文件系统。
 
-用法: ${0##*/} <Name> <BackupDir>
+用法: $DisplayCmd <Name> <BackupDir>
 
 参数:
   Name         chroot 环境的名称

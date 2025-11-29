@@ -28,12 +28,14 @@ PATH="$ScriptDir:$PATH"
 #PATH="/data/data/com.termux/files/usr/bin:$PATH"
 
 BasePath="/data/local/chroot"
+DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
+DisplayCmd="${DisplayCmd:-${0##*/}}"
 
 usage() {
     cat << EOF
 检查 chroot 环境的文件系统挂载。
 
-用法: ${0##*/} <Name>
+用法: $DisplayCmd <Name>
 
 参数:
   Name    chroot 环境的名称

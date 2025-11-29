@@ -28,14 +28,16 @@ PATH="$ScriptDir:$PATH"
 #PATH="/data/data/com.termux/files/usr/bin:$PATH"
 
 BasePath="/data/local/chroot"
+DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
+DisplayCmd="${DisplayCmd:-${0##*/}}"
 
 usage() {
     cat << EOF
 安全终止 chroot 环境，包括清理进程并卸载挂载点。
 
 用法:
-  ${0##*/} <Name>   终止指定名称的环境
-  ${0##*/} -a       终止所有环境
+  $DisplayCmd <Name>   终止指定名称的环境
+  $DisplayCmd -a       终止所有环境
 
 参数:
   Name    chroot 环境的名称

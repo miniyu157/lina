@@ -22,11 +22,14 @@ else
 fi
 colorize
 
+DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
+DisplayCmd="${DisplayCmd:-${0##*/}}"
+
 usage() {
     cat << EOF
 管理 chroot 环境中的进程。
 
-用法: ${0##*/} <Name> [Action]
+用法: $DisplayCmd <Name> [Action]
   Name        chroot 环境名称
   Action      操作模式:
     list   - (默认) 列出详细进程表
