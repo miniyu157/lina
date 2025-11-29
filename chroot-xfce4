@@ -1,5 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025 Yumeka <miniyu157@163.com>
+
 ScriptDir="$(cd "$(dirname "$0")" && pwd)"
 if [[ -f "$ScriptDir/lib/message.sh" ]]; then
     # shellcheck disable=SC1091

@@ -1,5 +1,8 @@
 #!/system/bin/sh
 
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025 Yumeka <miniyu157@163.com>
+
 # shellcheck shell=ksh
 # shellcheck disable=SC2059
 

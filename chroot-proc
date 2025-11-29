@@ -1,5 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025 Yumeka <miniyu157@163.com>
+
 set -e
 
 if [ "$(id -u)" -ne 0 ]; then

@@ -4,6 +4,7 @@
 #
 #   Copyright (c) 2006-2024 Pacman Development Team <pacman-dev@lists.archlinux.org>
 #   Copyright (c) 2002-2006 by Judd Vinet <jvinet@zeroflux.org>
+#   Copyright (c) 2025 Modified for lina by Yumeka <miniyu157@163.com>
 #
 #   This program is free software; you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
