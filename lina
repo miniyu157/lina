@@ -8,14 +8,15 @@
 BinDir="$(dirname "$(readlink -f "$0")")"
 Self="${0##*/}"
 
-[[ -f "$BinDir/update.lock" ]] && {
-    echo "$Self 上次启动时进行了更新, 更新内容是:"
-    cat "$BinDir/update.lock"
-    rm -f "$BinDir/update.lock"
-    echo ""
+[[ -f "$BinDir/.lina-dev" ]] || {
+    [[ -f "$BinDir/update.lock" ]] && {
+        echo "$Self 上次启动时进行了更新, 更新内容是:"
+        cat "$BinDir/update.lock"
+        rm -f "$BinDir/update.lock"
+        echo ""
+    }
+    (cd "$BinDir" && sh lina-update > /dev/null 2>&1 &)
 }
-
-(cd "$BinDir" && sh lina-update > /dev/null 2>&1 &)
 
 G=$'\e[1;30m'
 W=$'\e[0m'
