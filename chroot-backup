@@ -84,7 +84,7 @@ tar -cpf - \
     "${TarExcludeOpts[@]}" \
     -C "$(dirname "$RootFs")" \
     "$(basename "$RootFs")" 2> /dev/null \
-    | pv -s "$RawSize" \
+    | if command -v pv > /dev/null; then pv -s "$RawSize"; else cat; fi \
     | zstd -T0 > "$BackupFile"
 
 if [ -f "$BackupFile" ]; then

@@ -88,7 +88,7 @@ mkdir -p "$RootFs"
 
 msg2 "恢复: %s -> %s" "$SelectedFile" "$RootFs"
 
-pv "$SelectedFile" \
+{ if command -v pv > /dev/null; then pv "$SelectedFile"; else cat "$SelectedFile"; fi; } \
     | zstd -d \
     | tar -xp -C "$RootFs" --strip-components=1
 
