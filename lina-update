@@ -8,7 +8,7 @@
 # 记录更新前的指针
 old_head=$(git rev-parse HEAD)
 
-git fetch -q
+git fetch -q || exit 0
 git reset --hard origin/main >/dev/null 2>&1
 # git clean -fdx
 
