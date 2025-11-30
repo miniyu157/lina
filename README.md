@@ -31,7 +31,7 @@ git clone https://github.com/miniyu157/lina.git ~/.local/bin/lina-bin
 ```
 
 ```bash
- ln -s ~/.local/bin/lina-bin/lina ~/.local/bin/lina
+ln -s ~/.local/bin/lina-bin/lina ~/.local/bin/lina
 ```
 
 > [!NOTE] Tip
