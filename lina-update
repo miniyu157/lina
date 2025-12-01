@@ -5,14 +5,24 @@
 
 # shellcheck shell=ksh
 
-# 记录更新前的指针
-old_head=$(git rev-parse HEAD)
+RunLock=".lina-update.pid"
+
+# 检查锁文件是否存在，且对应的进程是否存活
+if [ -f "$RunLock" ] && kill -0 "$(cat "$RunLock")" 2>/dev/null; then
+    exit 0
+fi
+
+# 写入当前 PID 并设置退出时自动清理
+echo $$ > "$RunLock"
+trap 'rm -f "$RunLock"' EXIT HUP INT QUIT TERM
 
 git fetch -q || exit 0
-git reset --hard origin/main > /dev/null 2>&1
-# git clean -fdx
 
-# 只有当指针发生移动时才记录日志
-if [ "$old_head" != "$(git rev-parse HEAD)" ]; then
+LocalHead=$(git rev-parse HEAD)
+RemoteHead=$(git rev-parse origin/main)
+
+# 仅当远程指针与本地不一致时才重置，避免误删本地修改
+if [ "$LocalHead" != "$RemoteHead" ]; then
+    git reset --hard origin/main > /dev/null 2>&1
     git show -s --format='%ci [%h]%n%s' HEAD > update.lock
 fi
