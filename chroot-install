@@ -162,11 +162,14 @@ get_meta() {
 
 post_configure() {
     local rootfs="$1"
+    local resolv_conf="$rootfs/etc/resolv.conf"
 
-    if [ -L "$rootfs/etc/resolv.conf" ] || [ -f "$rootfs/etc/resolv.conf" ]; then
-        msg2 "修复 DNS 文件..."
-        rm -f "$rootfs/etc/resolv.conf"
-        echo "nameserver 8.8.8.8" > "$rootfs/etc/resolv.conf"
+    mkdir -p "$rootfs/etc"
+
+    if [ ! -s "$resolv_conf" ]; then
+        msg2 "修复 DNS 配置"
+        rm -f "$resolv_conf"
+        echo "nameserver 8.8.8.8" > "$resolv_conf"
     fi
 
     msg2 "设置 hosts..."

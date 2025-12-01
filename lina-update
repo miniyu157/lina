@@ -8,7 +8,7 @@
 RunLock=".lina-update.pid"
 
 # 检查锁文件是否存在，且对应的进程是否存活
-if [ -f "$RunLock" ] && kill -0 "$(cat "$RunLock")" 2>/dev/null; then
+if [ -f "$RunLock" ] && kill -0 "$(cat "$RunLock")" 2> /dev/null; then
     exit 0
 fi
 
