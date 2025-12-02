@@ -18,7 +18,7 @@ Self="${0##*/}"
     (cd "$BinDir" && sh lina-update > /dev/null 2>&1 &)
 }
 
-G=$'\e[1;30m'
+G=$'\e[38;5;243m'
 W=$'\e[0m'
 B=$'\e[1m'
 
