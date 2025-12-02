@@ -20,7 +20,7 @@
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-[[ -n "$LIBMAKEPKG_UTIL_MESSAGE_SH" ]] && return
+[[ -n $LIBMAKEPKG_UTIL_MESSAGE_SH ]] && return
 LIBMAKEPKG_UTIL_MESSAGE_SH=1
 
 colorize() {

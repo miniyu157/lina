@@ -38,7 +38,7 @@ EOF
 TargetName=""
 Mode="ps"
 
-if [[ -n "$1" ]]; then
+if [[ -n $1 ]]; then
     case "$1" in
         pids | ka | ps)
             Mode="$1"
@@ -53,9 +53,9 @@ if [[ -n "$1" ]]; then
     esac
 fi
 
-if [[ -n "$TargetName" ]]; then
+if [[ -n $TargetName ]]; then
     SearchTarget="$BasePath/$TargetName"
-    if [[ ! -d "$SearchTarget" ]]; then
+    if [[ ! -d $SearchTarget ]]; then
         exit 1
     fi
 else
@@ -77,13 +77,13 @@ show_ps() {
     printf "%-5s %-6s %-12s %s\n" "UID" "PID" "NAME" "COMMAND"
 
     _pids=$(get_pids)
-    [[ -z "$_pids" ]] && return 0
+    [[ -z $_pids ]] && return 0
 
     _GRAY=$(printf '\033[90m')
     _RESET=$(printf '\033[0m')
 
     echo "$_pids" | while read -r _pid; do
-        [[ -z "$_pid" ]] && continue
+        [[ -z $_pid ]] && continue
 
         _uid=""
         _ppid=""
@@ -100,11 +100,11 @@ show_ps() {
                         _ppid="$1"
                         ;;
                 esac
-                [[ -n "$_uid" && -n "$_ppid" ]] && break
+                [[ -n $_uid && -n $_ppid ]] && break
             done < "/proc/$_pid/status"
         fi
 
-        if [[ -n "$TargetName" ]]; then
+        if [[ -n $TargetName ]]; then
             _name="$TargetName"
         else
             if _link=$(readlink "/proc/$_pid/root" 2> /dev/null); then
@@ -118,14 +118,14 @@ show_ps() {
         if [[ -r "/proc/$_pid/cmdline" ]]; then
             _cmd=$(tr '\0' ' ' < "/proc/$_pid/cmdline")
         fi
-        if [[ -z "$_cmd" && -r "/proc/$_pid/comm" ]]; then
+        if [[ -z $_cmd && -r "/proc/$_pid/comm" ]]; then
             read -r _cmd < "/proc/$_pid/comm"
             _cmd="[$_cmd]"
         fi
 
         _line_str=$(printf "%-5s %-6s %-12s %s" "${_uid:-?}" "$_pid" "${_name:-?}" "${_cmd:-?}")
 
-        if [[ "$_ppid" -ne 1 ]] 2> /dev/null; then
+        if [[ $_ppid -ne 1 ]] 2> /dev/null; then
             printf "%s%s%s\n" "$_GRAY" "$_line_str" "$_RESET"
         else
             printf "%s\n" "$_line_str"
@@ -138,7 +138,7 @@ do_kill() {
 
     _pids=$(get_pids)
 
-    [[ -z "$_pids" ]] && return 0
+    [[ -z $_pids ]] && return 0
 
     # 发送 SIGTERM
     for _pid in $_pids; do

@@ -52,7 +52,7 @@ chroot_shutdown() {
     local target="$1"
     local rootfs="$BasePath/$target"
 
-    [[ -d "$rootfs" ]] || {
+    [[ -d $rootfs ]] || {
         error "目录 '$rootfs' 不存在，跳过。"
         return 1
     }
@@ -66,8 +66,8 @@ chroot_shutdown() {
     chroot-umount "$target" > /dev/null 2>&1
 }
 
-if [[ "$1" == "-a" ]]; then
-    [[ -n "$2" ]] && {
+if [[ $1 == "-a" ]]; then
+    [[ -n $2 ]] && {
         error "选项 -a 不能与名称共存。"
         usage
     }
@@ -83,12 +83,12 @@ if [[ "$1" == "-a" ]]; then
         exit 1
     fi
 
-elif [[ -n "$1" ]]; then
-    [[ "$1" == -* ]] && usage
+elif [[ -n $1 ]]; then
+    [[ $1 == -* ]] && usage
 
     Name="$1"
     RootFs="$BasePath/$Name"
-    [[ -d "$RootFs" ]] || {
+    [[ -d $RootFs ]] || {
         error "目录 '$RootFs' 不存在。"
         exit 1
     }

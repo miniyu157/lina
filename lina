@@ -70,6 +70,6 @@ if [ -x "$TargetScript" ]; then
     exec "$TargetScript" "$@"
 else
     echo "错误: 未知的指令 '$Action'" >&2
-    echo "请运行 '$Self' 以查看可用指令。" >&2
+    echo "运行 '$Self' 以查看可用指令。" >&2
     exit 1
 fi

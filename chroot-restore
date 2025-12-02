@@ -46,17 +46,17 @@ EOF
 
 Name="$1"
 BackupDir="$2"
-[[ -z "$Name" ]] && {
+[[ -z $Name ]] && {
     error "未提供名称。"
     usage
 }
-[[ -z "$BackupDir" ]] && {
+[[ -z $BackupDir ]] && {
     error "未提供备份目录。"
     usage
 }
 
 RootFs="$BasePath/$Name"
-[[ -d "$RootFs" ]] && {
+[[ -d $RootFs ]] && {
     error "目录 '$RootFs' 已存在。"
     exit 1
 }
@@ -88,9 +88,9 @@ mkdir -p "$RootFs"
 
 msg2 "恢复: %s -> %s" "$SelectedFile" "$RootFs"
 
-{ if command -v pv > /dev/null; then pv "$SelectedFile"; else cat "$SelectedFile"; fi; } \
-    | zstd -d \
-    | tar -xp -C "$RootFs" --strip-components=1
+{ if command -v pv > /dev/null; then pv "$SelectedFile"; else cat "$SelectedFile"; fi; } |
+    zstd -d |
+    tar -xp -C "$RootFs" --strip-components=1
 
 if [ -d "$RootFs" ]; then
     msg "恢复完成。"

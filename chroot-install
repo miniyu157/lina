@@ -90,7 +90,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             # 如果没有指定 -n，且不是 distro:ver 格式，则认为是 Name
-            if [[ -z "$Name" ]]; then
+            if [[ -z $Name ]]; then
                 Name="$1"
             fi
             shift
@@ -98,7 +98,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$DistroInput" ]]; then
+if [[ -z $DistroInput ]]; then
     error "未指定发行版 (distro:version)。"
     usage
 fi
@@ -106,14 +106,14 @@ fi
 Distro="${DistroInput%%:*}"
 Version="${DistroInput##*:}"
 
-[[ -z "$Name" ]] && PendingName=1
+[[ -z $Name ]] && PendingName=1
 
 Name="${Name:-$Distro}"
 RootFs="$BasePath/$Name"
-if [[ -d "$RootFs" ]]; then
+if [[ -d $RootFs ]]; then
     ErrorMessage="目录 '$RootFs' 已存在。"
-    [[ -n "$PendingName" ]] \
-        && ErrorMessage="$ErrorMessage 请用 -n 指定另外一个名称。"
+    [[ -n $PendingName ]] &&
+        ErrorMessage="$ErrorMessage 请用 -n 指定另外一个名称。"
 
     error "$ErrorMessage"
     exit 1
@@ -201,9 +201,9 @@ cd "$BasePath" || exit 1
 check_sum() {
     local sumfile="$2"
 
-    if [[ "$Distro" == "arch" || "$Distro" == "alpine" ]]; then
+    if [[ $Distro == "arch" || $Distro == "alpine" ]]; then
         "$SUM_CMD" -c "$sumfile" > /dev/null 2>&1
-    elif [[ "$Distro" == "ubuntu" ]]; then
+    elif [[ $Distro == "ubuntu" ]]; then
         # Ubuntu 的校验文件包含列表，必须先 grep 过滤出当前文件
         grep "$TAR_BASENAME" "$sumfile" | "$SUM_CMD" -c > /dev/null 2>&1
     fi

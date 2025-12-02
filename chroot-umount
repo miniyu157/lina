@@ -44,12 +44,12 @@ EOF
 }
 
 Name="$1"
-[[ -z "$Name" ]] && {
+[[ -z $Name ]] && {
     error "未提供名称。"
     usage 1
 }
 RootFs="$BasePath/$Name"
-[[ -d "$RootFs" ]] || {
+[[ -d $RootFs ]] || {
     error "目录 '$RootFs' 不存在。"
     exit 1
 }

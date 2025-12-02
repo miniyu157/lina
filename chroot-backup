@@ -46,18 +46,18 @@ EOF
 
 Name="$1"
 BackupDir="$2"
-[[ -z "$Name" ]] && {
+[[ -z $Name ]] && {
     error "未提供名称。"
     usage
 }
-[[ -z "$BackupDir" ]] && {
+[[ -z $BackupDir ]] && {
     error "未提供备份目录。"
     usage
 }
 
 mkdir -p "$BackupDir"
 RootFs="$BasePath/$Name"
-[[ -d "$RootFs" ]] || {
+[[ -d $RootFs ]] || {
     error "目录 '$RootFs' 不存在。"
     exit 1
 }
@@ -72,8 +72,8 @@ if is-mounted "$TermuxTmp" "$RootFs/tmp"; then
 fi
 
 msg "统计存储占用..."
-RawSize=$(du -sbx "${DuExcludeOpts[@]}" "$RootFs" 2> /dev/null | awk "{print \$1}")
-HumanSize=$(du -shx "${DuExcludeOpts[@]}" "$RootFs" 2> /dev/null | awk "{print \$1}")
+RawSize=$(du -sbx "${DuExcludeOpts[@]}" "$RootFs" 2> /dev/null | awk '{print $1}')
+HumanSize=$(du -shx "${DuExcludeOpts[@]}" "$RootFs" 2> /dev/null | awk '{print $1}')
 
 msg "开始归档..."
 BackupFile="$BackupDir/$Name-$(date +'[%y]%m.%d-%H:%M:%S').tar.zst"
@@ -83,9 +83,9 @@ tar -cpf - \
     --one-file-system --warning=no-file-ignored \
     "${TarExcludeOpts[@]}" \
     -C "$(dirname "$RootFs")" \
-    "$(basename "$RootFs")" 2> /dev/null \
-    | if command -v pv > /dev/null; then pv -s "$RawSize"; else cat; fi \
-    | zstd -T0 > "$BackupFile"
+    "$(basename "$RootFs")" 2> /dev/null |
+    if command -v pv > /dev/null; then pv -s "$RawSize"; else cat; fi |
+    zstd -T0 > "$BackupFile"
 
 if [ -f "$BackupFile" ]; then
     msg "归档完成。"
