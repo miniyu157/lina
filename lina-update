@@ -23,6 +23,9 @@ RemoteHead=$(git rev-parse origin/main)
 
 # 仅当远程指针与本地不一致时才重置，避免误删本地修改
 if [ "$LocalHead" != "$RemoteHead" ]; then
+    git log --color=always \
+        --format='%C(243)[%h]%C(reset) %s' \
+        "$LocalHead..origin/main" > update.lock
+
     git reset --hard origin/main > /dev/null 2>&1
-    git show -s --format='%ci [%h]%n%s' HEAD > update.lock
 fi
