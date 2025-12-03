@@ -2,7 +2,13 @@
 
 在你的 Android 设备上通过 Chroot 运行 Linux 发行版。
 
-Simple, fast, and elegant.
+简单、快速、优雅。
+
+> [!IMPORTANT]
+> **🧬 正在进化：Lina**
+>
+> lina 正在进行核心架构重构，将进化为 **基于 Git 的微内核模块化系统**。
+> 新架构将带来极致的解耦与插件化支持，目前正在 [**refactor/microkernel**](../../tree/refactor/microkernel) 分支活跃开发中。
 
 ### 🛠️ 环境准备
 
