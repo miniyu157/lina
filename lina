@@ -5,22 +5,33 @@
 
 # shellcheck shell=ksh
 
-BinDir="$(dirname "$(readlink -f "$0")")"
+LinaRoot="$(dirname "$(readlink -f "$0")")"
+
+GitBranch="$(git rev-parse --abbrev-ref HEAD)"
+LINA_VERSION="r$(git rev-list --count HEAD)-$(git rev-parse --short HEAD)"
+
+Modules="$LinaRoot/modules"
 Self="${0##*/}"
 
-[[ -f "$BinDir/.lina-dev" ]] || {
-    [[ -f "$BinDir/update.lock" ]] && {
+[[ -f "$LinaRoot/.lina-dev" ]] || {
+    [[ -f "$LinaRoot/update.lock" ]] && {
         echo "$Self 上次启动时进行了更新, 更新内容是:"
-        cat "$BinDir/update.lock"
-        rm -f "$BinDir/update.lock"
+        cat "$LinaRoot/update.lock"
+        rm -f "$LinaRoot/update.lock"
         echo ""
     }
-    (cd "$BinDir" && sh lina-update > /dev/null 2>&1 &)
+    (cd "$LinaRoot" && sh lina-update > /dev/null 2>&1 &)
 }
 
 G=$'\e[38;5;243m'
 W=$'\e[0m'
 B=$'\e[1m'
+
+C_GRAY=$'\e[38;5;243m'
+C_GREEN=$'\e[32m'
+C_YELLOW=$'\e[33m'
+C_RESET=$'\e[0m'
+C_BLOD=$'\e[1m'
 
 paint() {
     sed -e "s/%B/$B/g" \
@@ -28,17 +39,7 @@ paint() {
         -e "s/%W/$W/g"
 }
 
-if [ -z "$1" ]; then
-    Cmds=""
-    for File in "$BinDir"/chroot-*; do
-        [ -x "$File" ] || continue
-        case ${File##*/} in
-            *.test) ;;
-            *.*) continue ;;
-        esac
-        Cmds="$Cmds, ${File##*chroot-}"
-    done
-
+if [[ -z $1 ]]; then
     cat << 'EOF' | paint
 
 %G  .---.    %W%B.-./`)%W%G ,---.   .--.   ____     %W
@@ -54,22 +55,39 @@ if [ -z "$1" ]; then
 EOF
 
     cat << EOF
-用法: $Self <指令> [参数...]
-可用指令: ${Cmds#, }
+$Self $C_YELLOW($GitBranch)$C_RESET $C_GRAY$LINA_VERSION$C_RESET
+
+$C_BLOD用法: $Self [模块=core] <指令> [参数...]$C_RESET
+$C_BLOD指令:$C_RESET
 EOF
-    exit 1
+
+    MaxLen=0
+    for ModPath in "$Modules"/*; do
+        [[ -d $ModPath ]] || continue
+        Name="${ModPath##*/}"
+        Len=${#Name}
+        ((Len > MaxLen)) && MaxLen=$Len
+    done
+    ((Pad = MaxLen + 1))
+
+    for ModPath in "$Modules"/*; do
+        [[ -d $ModPath ]] || continue
+        ModName="${ModPath##*/}"
+        CmdList=""
+
+        for Script in "$ModPath"/*; do
+            [[ -d $Script ]] && continue
+            [[ -x $Script ]] || continue
+            [[ ${Script##*/} == *.* ]] && continue
+            CmdList="$CmdList, ${Script##*/}"
+        done
+
+        printf "  $C_GREEN%-${Pad}s$C_RESET %s\n" "$ModName" "${CmdList#, }"
+    done
+
+    exit 0
 fi
 
-Action="$1"
-shift
-TargetScript="$BinDir/chroot-$Action"
+Command="$1"
 
-if [ -x "$TargetScript" ]; then
-    export LINA_ENTRY="$Self"
-    export LINA_ACTION="$Action"
-    exec "$TargetScript" "$@"
-else
-    echo "错误: 未知的指令 '$Action'" >&2
-    echo "运行 '$Self' 以查看可用指令。" >&2
-    exit 1
-fi
+printf "你输入了 %s, 对应的逻辑还没有完成" $Command
