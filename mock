@@ -16,4 +16,4 @@ exec proot -0 \
     -b /sys \
     -b .:/workdir \
     -w /workdir \
-    "$REAL_SHELL" "$@"
+    "${@:-$SHELL}"
