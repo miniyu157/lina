@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+MOCK_DIR=".mock_env"
+REAL_SHELL="$(which mksh 2> /dev/null || which bash)"
+
+mkdir -p "$MOCK_DIR"/{data,sdcard}
+
+export PATH="/system/bin:/workdir:$PATH"
+
+exec proot -0 \
+    -b "$REAL_SHELL:/system/bin/sh" \
+    -b "$MOCK_DIR/data:/data" \
+    -b "$MOCK_DIR/sdcard:/sdcard" \
+    -b /dev \
+    -b /proc \
+    -b /sys \
+    -b .:/workdir \
+    -w /workdir \
+    "$REAL_SHELL" "$@"
