@@ -5,4 +5,13 @@
 
 # shellcheck shell=ksh
 
-echo "this lina pkg add command"
+DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
+DisplayCmd="${DisplayCmd:-${0##*/}}"
+
+cat << EOF
+LINA_ENTRY: $LINA_ENTRY
+LINA_ACTION: $LINA_ACTION
+DisplayCmd: $DisplayCmd
+\$@: $@
+\$#: $#
+EOF
