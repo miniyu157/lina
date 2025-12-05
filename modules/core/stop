@@ -21,8 +21,6 @@ source "$ScriptDir/lib/message.sh"
 QUIET=0
 colorize
 
-# 启用此行以使用其它自定义脚本
-PATH="$ScriptDir:$PATH"
 # 启用以下两行以使用 Termux 中的二进制程序和库
 #export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
 #PATH="/data/data/com.termux/files/usr/bin:$PATH"
@@ -60,10 +58,10 @@ chroot_shutdown() {
     msg "终止: $target ..."
 
     # 尝试杀死相关进程
-    chroot-proc "$target" ka > /dev/null 2>&1
+    $ScriptDir/proc "$target" ka > /dev/null 2>&1
 
     # 卸载挂载点
-    chroot-umount "$target" > /dev/null 2>&1
+    $ScriptDir/umount "$target" > /dev/null 2>&1
 }
 
 if [[ $1 == "-a" ]]; then
@@ -98,7 +96,6 @@ else
 fi
 
 Pfx="${LINA_ENTRY:+$LINA_ENTRY }"
-Pfx="${Pfx:-chroot-}"
 
 echo ""
 plain "提示信息:"

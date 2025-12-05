@@ -21,8 +21,6 @@ source "$ScriptDir/lib/message.sh"
 QUIET=0
 colorize
 
-# 启用此行以使用其它自定义脚本
-#PATH="$ScriptDir:$PATH"
 # 启用以下两行以使用 Termux 中的二进制程序和库
 #export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
 #PATH="/data/data/com.termux/files/usr/bin:$PATH"

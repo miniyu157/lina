@@ -21,8 +21,6 @@ source "$ScriptDir/lib/message.sh"
 QUIET=0
 colorize
 
-# 启用此行以使用其它自定义脚本
-PATH="$ScriptDir:$PATH"
 # 启用以下两行以使用 Termux 中的二进制程序和库
 #export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
 #PATH="/data/data/com.termux/files/usr/bin:$PATH"
@@ -55,7 +53,7 @@ RootFs="$BasePath/$Name"
     exit 1
 }
 
-if chroot-checkmount "$Name" > /dev/null 2>&1; then
+if $ScriptDir/checkmount "$Name" > /dev/null 2>&1; then
     error "必须先卸载文件系统才能删除。"
     exit 1
 fi
