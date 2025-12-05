@@ -8,7 +8,7 @@
 RunLock=".lina-update.pid"
 
 # 检查锁文件是否存在，且对应的进程是否存活
-if [ -f "$RunLock" ] && kill -0 "$(cat "$RunLock")" 2> /dev/null; then
+if [[ -f $RunLock ]] && kill -0 "$(cat "$RunLock")" 2> /dev/null; then
     exit 0
 fi
 
@@ -22,7 +22,7 @@ LocalHead=$(git rev-parse HEAD)
 RemoteHead=$(git rev-parse origin/main)
 
 # 仅当远程指针与本地不一致时才重置，避免误删本地修改
-if [ "$LocalHead" != "$RemoteHead" ]; then
+if [[ $LocalHead != "$RemoteHead" ]]; then
     git log --color=always \
         --format='%C(243)[%h]%C(reset) %s' \
         "$LocalHead..origin/main" > update.lock

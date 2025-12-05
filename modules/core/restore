@@ -5,7 +5,7 @@
 
 # shellcheck shell=ksh
 
-if [ "$(id -u)" -ne 0 ]; then
+if (($(id -u) != 0)); then
     current_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
     quoted_args=$(printf " %q" "$@")
     exec su -M -c "exec '$current_script'$quoted_args"
@@ -62,24 +62,24 @@ RootFs="$BasePath/$Name"
 msg "扫描备份文件..."
 cd "$BackupDir" || exit 1
 set -- *.tar.zst
-if [ "$#" -eq 0 ] || [ ! -f "$1" ]; then
+if (($# == 0)) || [[ ! -f $1 ]]; then
     error "未找到 .tar.zst 备份文件。"
     exit 1
 fi
 i=1
 for file in "$@"; do
     plain "[%d] %s" "$i" "$file"
-    i=$((i + 1))
+    ((i++))
 done
 
 ask "选择一个归档文件: "
 read -r choice < /dev/tty
-if [ -z "$choice" ] || [ "$choice" -lt 1 ] || [ "$choice" -gt "$#" ] 2> /dev/null; then
+if [[ -z $choice ]] || ((choice < 1 || choice > $#)); then
     error "无效的选择: %s" "$choice"
     exit 1
 fi
 
-shift "$((choice - 1))"
+shift $((choice - 1))
 SelectedFile="$1"
 
 mkdir -p "$RootFs"
@@ -90,7 +90,7 @@ msg2 "恢复: %s -> %s" "$SelectedFile" "$RootFs"
     zstd -d |
     tar -xp -C "$RootFs" --strip-components=1
 
-if [ -d "$RootFs" ]; then
+if [[ -d $RootFs ]]; then
     msg "恢复完成。"
 else
     error "目标目录未创建。"

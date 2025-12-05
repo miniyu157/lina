@@ -6,7 +6,7 @@
 # shellcheck shell=ksh
 # shellcheck disable=SC2086
 
-if [ "$(id -u)" -ne 0 ]; then
+if (($(id -u) != 0)); then
     current_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
     quoted_args=$(printf " %q" "$@")
     exec su -M -c "exec '$current_script'$quoted_args"
@@ -149,18 +149,18 @@ do_kill() {
     _timeout=50 # 5秒 (50 * 0.1s)
     _count=0
 
-    while [ "$_count" -lt "$_timeout" ]; do
+    while ((_count < _timeout)); do
         _alive_count=0
         for _pid in $_pids; do
             if kill -0 "$_pid" 2> /dev/null; then
-                _alive_count=$((_alive_count + 1))
+                ((_alive_count++))
             fi
         done
 
-        [ "$_alive_count" -eq 0 ] && break
+        ((_alive_count == 0)) && break
 
         sleep 0.1
-        _count=$((_count + 1))
+        ((_count++))
     done
 
     # 发送 SIGKILL 给剩余进程
