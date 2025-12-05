@@ -104,6 +104,10 @@ fi
 Distro="${DistroInput%%:*}"
 Version="${DistroInput##*:}"
 
+if [[ ! -d $BasePath ]]; then
+    mkdir -p "$BasePath" || exit 1
+fi
+
 [[ -z $Name ]] && PendingName=1
 
 Name="${Name:-$Distro}"
