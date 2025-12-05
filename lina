@@ -5,9 +5,9 @@
 
 # shellcheck shell=ksh
 
-GitBranch="$(git rev-parse --abbrev-ref HEAD)"
-LINA_VERSION="r$(git rev-list --count HEAD)-$(git rev-parse --short HEAD)"
 LinaRoot="$(dirname "$(readlink -f "$0")")"
+GitBranch="$(git -C "$LinaRoot" rev-parse --abbrev-ref HEAD)"
+LINA_VERSION="r$(git -C "$LinaRoot" rev-list --count HEAD)-$(git -C "$LinaRoot" rev-parse --short HEAD)"
 Modules="$LinaRoot/modules"
 Self="${0##*/}"
 
