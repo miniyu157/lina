@@ -12,7 +12,6 @@ if [ "$(id -u)" -ne 0 ]; then
     exec su -M -c "exec '$current_script'$quoted_args"
 fi
 ScriptDir="$(cd "$(dirname "$0")" && pwd)"
-PATH="$ScriptDir:$PATH"
 BasePath="/data/local/chroot"
 
 if [ ! -d "$BasePath" ]; then
@@ -28,10 +27,10 @@ for dir in "$BasePath"/*; do
     if [ -d "$dir" ]; then
         name="${dir##*/}"
 
-        pid_count=$(chroot-proc "$name" pids 2> /dev/null | wc -l)
+        pid_count=$($ScriptDir/proc "$name" pids 2> /dev/null | wc -l)
         pid_count=$((pid_count + 0))
 
-        if chroot-checkmount "$name" > /dev/null 2>&1; then
+        if $ScriptDir/checkmount "$name" > /dev/null 2>&1; then
             mnt_status="Yes"
         else
             mnt_status="No"

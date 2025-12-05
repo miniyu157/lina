@@ -5,22 +5,31 @@
 
 # shellcheck shell=ksh
 
-BinDir="$(dirname "$(readlink -f "$0")")"
+GitBranch="$(git rev-parse --abbrev-ref HEAD)"
+LINA_VERSION="r$(git rev-list --count HEAD)-$(git rev-parse --short HEAD)"
+LinaRoot="$(dirname "$(readlink -f "$0")")"
+Modules="$LinaRoot/modules"
 Self="${0##*/}"
 
-[[ -f "$BinDir/.lina-dev" ]] || {
-    [[ -f "$BinDir/update.lock" ]] && {
+[[ -f "$LinaRoot/.lina-dev" ]] || {
+    [[ -f "$LinaRoot/update.lock" ]] && {
         echo "$Self 上次启动时进行了更新, 更新内容是:"
-        cat "$BinDir/update.lock"
-        rm -f "$BinDir/update.lock"
+        cat "$LinaRoot/update.lock"
+        rm -f "$LinaRoot/update.lock"
         echo ""
     }
-    (cd "$BinDir" && sh lina-update > /dev/null 2>&1 &)
+    (cd "$LinaRoot" && sh lina-update > /dev/null 2>&1 &)
 }
 
 G=$'\e[38;5;243m'
 W=$'\e[0m'
 B=$'\e[1m'
+
+C_GRAY=$'\e[38;5;243m'
+C_GREEN=$'\e[32m'
+C_YELLOW=$'\e[33m'
+C_RESET=$'\e[0m'
+C_BLOD=$'\e[1m'
 
 paint() {
     sed -e "s/%B/$B/g" \
@@ -28,17 +37,7 @@ paint() {
         -e "s/%W/$W/g"
 }
 
-if [ -z "$1" ]; then
-    Cmds=""
-    for File in "$BinDir"/chroot-*; do
-        [ -x "$File" ] || continue
-        case ${File##*/} in
-            *.test) ;;
-            *.*) continue ;;
-        esac
-        Cmds="$Cmds, ${File##*chroot-}"
-    done
-
+banner() {
     cat << 'EOF' | paint
 
 %G  .---.    %W%B.-./`)%W%G ,---.   .--.   ____     %W
@@ -52,24 +51,77 @@ if [ -z "$1" ]; then
 %G  `--------`'---' '--'    '--' '.%W%B(_,_)%W%G.'  %W
 
 EOF
+}
 
+usage() {
     cat << EOF
-用法: $Self <指令> [参数...]
-可用指令: ${Cmds#, }
+$Self $C_YELLOW($GitBranch)$C_RESET $C_GRAY$LINA_VERSION$C_RESET
+
+$C_BLOD用法: $Self [模块=core] <指令> [参数...]$C_RESET
+$C_BLOD指令:$C_RESET
 EOF
-    exit 1
-fi
 
-Action="$1"
-shift
-TargetScript="$BinDir/chroot-$Action"
+    MaxLen=0
+    for ModPath in "$Modules"/*; do
+        [[ -d $ModPath ]] || continue
+        Name="${ModPath##*/}"
+        Len=${#Name}
+        ((Len > MaxLen)) && MaxLen=$Len
+    done
+    ((Pad = MaxLen + 1))
 
-if [ -x "$TargetScript" ]; then
+    for ModPath in "$Modules"/*; do
+        [[ -d $ModPath ]] || continue
+        ModName="${ModPath##*/}"
+        CmdList=""
+
+        for Script in "$ModPath"/*; do
+            [[ -d $Script ]] && continue
+            [[ -x $Script ]] || continue
+            [[ ${Script##*/} == *.* ]] && continue
+            CmdList="$CmdList, ${Script##*/}"
+        done
+
+        printf "  $C_GREEN%-${Pad}s$C_RESET %s\n" "$ModName" "${CmdList#, }"
+    done
+
+    exit "${1:-0}"
+}
+
+[[ -z $1 ]] && {
+    banner
+    usage 0
+}
+
+Command="$1"
+
+Script="$Modules/core/$Command"
+if [[ -x $Script ]]; then
+    shift
     export LINA_ENTRY="$Self"
-    export LINA_ACTION="$Action"
-    exec "$TargetScript" "$@"
+    export LINA_ACTION="$Command"
+    exec "$Script" "$@"
+
+elif [[ -d $Modules/$Command ]]; then
+    SubCommand="$2"
+    case "$SubCommand" in
+        # 输入了模块名称, 但未提供指令
+        "" | --help | -h)
+            usage 0
+            ;;
+    esac
+
+    if [[ -x $Modules/$Command/$SubCommand ]]; then
+        shift 2
+        export LINA_ENTRY="$Self"
+        export LINA_ACTION="$Command"
+        exec "$Modules/$Command/$SubCommand" "$@"
+    else
+        printf "'%s' 不是模块 '%s' 的指令\n" "$Command" "$SubCommand"
+        exit 1
+    fi
+
 else
-    echo "错误: 未知的指令 '$Action'" >&2
-    echo "运行 '$Self' 以查看可用指令。" >&2
+    printf "'%s' 不是 $Self 中的指令或模块, 确定安装它了吗?\n" "$Command"
     exit 1
 fi

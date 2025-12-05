@@ -21,8 +21,6 @@ source "$ScriptDir/lib/message.sh"
 QUIET=0
 colorize
 
-# 启用此行以使用其它自定义脚本
-#PATH="$ScriptDir:$PATH"
 # 启用以下两行以使用 Termux 中的二进制程序和库
 export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
 PATH="/data/data/com.termux/files/usr/bin:$PATH"
@@ -259,7 +257,6 @@ msg2 "Tarball 保留在: $TAR_FILE"
 echo ""
 
 Pfx="${LINA_ENTRY:+$LINA_ENTRY }"
-Pfx="${Pfx:-chroot-}"
 
 plain "提示信息:"
 plain "  1) 使用 '${Pfx}mount $Name' 挂载文件系统"

@@ -21,8 +21,6 @@ source "$ScriptDir/lib/message.sh"
 QUIET=0
 colorize
 
-# 启用此行以使用其它自定义脚本
-#PATH="$ScriptDir:$PATH"
 # 启用以下两行以使用 Termux 中的二进制程序和库
 #export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
 #PATH="/data/data/com.termux/files/usr/bin:$PATH"
@@ -33,7 +31,7 @@ DisplayCmd="${DisplayCmd:-${0##*/}}"
 
 usage() {
     cat << EOF
-卸载 chroot 文件系统。
+检查 chroot 环境的文件系统挂载。
 
 用法: $DisplayCmd <Name>
 
@@ -54,30 +52,28 @@ RootFs="$BasePath/$Name"
     exit 1
 }
 
-try_umount_stacked() {
-    local target_path="$1"
-    local unmounted_count=0
+OVERALL_STATUS=1
 
-    while umount -l "$target_path" 2> /dev/null; do
-        unmounted_count=$((unmounted_count + 1))
+check_mount() {
+    local src="$1"
+    local tgt="$2"
 
-        if [ "$unmounted_count" -ge 50 ]; then
-            error "无法卸载 %s, 重试次数达到 50 次" "$target_path"
-            exit 1
-        fi
-
-        msg2g "卸载[%s]: %s" "$unmounted_count" "$target_path"
-    done
-
-    if [ ! "$unmounted_count" -gt 0 ]; then
-        msg2y "跳过: %s" "$target_path"
+    if $ScriptDir/is-mounted "$src" "$tgt"; then
+        msg2g "已挂载: %s" "$tgt"
+        OVERALL_STATUS=0
+        return 0
+    else
+        msg2 "未挂载: %s" "$tgt"
+        return 1
     fi
 }
 
-try_umount_stacked "$RootFs/tmp"
-try_umount_stacked "$RootFs/sdcard"
-try_umount_stacked "$RootFs/sys"
-try_umount_stacked "$RootFs/proc"
-try_umount_stacked "$RootFs/dev/shm"
-try_umount_stacked "$RootFs/dev/pts"
-try_umount_stacked "$RootFs/dev"
+check_mount "/data/data/com.termux/files/usr/tmp" "$RootFs/tmp"
+check_mount /dev "$RootFs/dev"
+check_mount devpts "$RootFs/dev/pts"
+check_mount tmpfs "$RootFs/dev/shm"
+check_mount proc "$RootFs/proc"
+check_mount sysfs "$RootFs/sys"
+check_mount /sdcard "$RootFs/sdcard"
+
+exit $OVERALL_STATUS

@@ -1,0 +1,17 @@
+#!/system/bin/sh
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025 Yumeka <miniyu157@163.com>
+
+# shellcheck shell=ksh
+
+DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
+DisplayCmd="${DisplayCmd:-${0##*/}}"
+
+cat << EOF
+LINA_ENTRY: $LINA_ENTRY
+LINA_ACTION: $LINA_ACTION
+DisplayCmd: $DisplayCmd
+\$@: $@
+\$#: $#
+EOF

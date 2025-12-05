@@ -21,8 +21,6 @@ source "$ScriptDir/lib/message.sh"
 QUIET=0
 colorize
 
-# 启用此行以使用其它自定义脚本
-PATH="$ScriptDir:$PATH"
 # 启用以下两行以使用 Termux 中的二进制程序和库
 #export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
 #PATH="/data/data/com.termux/files/usr/bin:$PATH"
@@ -33,12 +31,12 @@ DisplayCmd="${DisplayCmd:-${0##*/}}"
 
 usage() {
     cat << EOF
-检查 chroot 环境的文件系统挂载。
+删除 chroot 根文件系统。
 
 用法: $DisplayCmd <Name>
 
 参数:
-  Name    chroot 环境的名称
+  Name         chroot 环境的名称
 EOF
     exit 1
 }
@@ -46,36 +44,33 @@ EOF
 Name="$1"
 [[ -z $Name ]] && {
     error "未提供名称。"
-    usage 1
+    usage
 }
+
 RootFs="$BasePath/$Name"
 [[ -d $RootFs ]] || {
     error "目录 '$RootFs' 不存在。"
     exit 1
 }
 
-OVERALL_STATUS=1
+if $ScriptDir/checkmount "$Name" > /dev/null 2>&1; then
+    error "必须先卸载文件系统才能删除。"
+    exit 1
+fi
 
-check_mount() {
-    local src="$1"
-    local tgt="$2"
+warning "虽然未检测到挂载, 但是此命令可能不可靠, 建议手动检查挂载状态。"
+warning "即将执行 rm -rf %s" "$RootFs"
 
-    if is-mounted "$src" "$tgt"; then
-        msg2g "已挂载: %s" "$tgt"
-        OVERALL_STATUS=0
-        return 0
-    else
-        msg2 "未挂载: %s" "$tgt"
-        return 1
-    fi
-}
+printf "确定要删除 '%s' 吗? [y/N] " "$Name"
+read -r -n 1 ans
+echo
 
-check_mount "/data/data/com.termux/files/usr/tmp" "$RootFs/tmp"
-check_mount /dev "$RootFs/dev"
-check_mount devpts "$RootFs/dev/pts"
-check_mount tmpfs "$RootFs/dev/shm"
-check_mount proc "$RootFs/proc"
-check_mount sysfs "$RootFs/sys"
-check_mount /sdcard "$RootFs/sdcard"
-
-exit $OVERALL_STATUS
+case "$ans" in
+    [yY])
+        rm -rf "$RootFs"
+        echo "$Name"
+        ;;
+    *)
+        exit 0
+        ;;
+esac

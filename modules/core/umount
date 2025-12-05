@@ -21,8 +21,6 @@ source "$ScriptDir/lib/message.sh"
 QUIET=0
 colorize
 
-# 启用此行以使用其它自定义脚本
-PATH="$ScriptDir:$PATH"
 # 启用以下两行以使用 Termux 中的二进制程序和库
 #export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
 #PATH="/data/data/com.termux/files/usr/bin:$PATH"
@@ -33,12 +31,12 @@ DisplayCmd="${DisplayCmd:-${0##*/}}"
 
 usage() {
     cat << EOF
-删除 chroot 根文件系统。
+卸载 chroot 文件系统。
 
 用法: $DisplayCmd <Name>
 
 参数:
-  Name         chroot 环境的名称
+  Name    chroot 环境的名称
 EOF
     exit 1
 }
@@ -46,33 +44,38 @@ EOF
 Name="$1"
 [[ -z $Name ]] && {
     error "未提供名称。"
-    usage
+    usage 1
 }
-
 RootFs="$BasePath/$Name"
 [[ -d $RootFs ]] || {
     error "目录 '$RootFs' 不存在。"
     exit 1
 }
 
-if chroot-checkmount "$Name" > /dev/null 2>&1; then
-    error "必须先卸载文件系统才能删除。"
-    exit 1
-fi
+try_umount_stacked() {
+    local target_path="$1"
+    local unmounted_count=0
 
-warning "虽然未检测到挂载, 但是此命令可能不可靠, 建议手动检查挂载状态。"
-warning "即将执行 rm -rf %s" "$RootFs"
+    while umount -l "$target_path" 2> /dev/null; do
+        unmounted_count=$((unmounted_count + 1))
 
-printf "确定要删除 '%s' 吗? [y/N] " "$Name"
-read -r -n 1 ans
-echo
+        if [ "$unmounted_count" -ge 50 ]; then
+            error "无法卸载 %s, 重试次数达到 50 次" "$target_path"
+            exit 1
+        fi
 
-case "$ans" in
-    [yY])
-        rm -rf "$RootFs"
-        echo "$Name"
-        ;;
-    *)
-        exit 0
-        ;;
-esac
+        msg2g "卸载[%s]: %s" "$unmounted_count" "$target_path"
+    done
+
+    if [ ! "$unmounted_count" -gt 0 ]; then
+        msg2y "跳过: %s" "$target_path"
+    fi
+}
+
+try_umount_stacked "$RootFs/tmp"
+try_umount_stacked "$RootFs/sdcard"
+try_umount_stacked "$RootFs/sys"
+try_umount_stacked "$RootFs/proc"
+try_umount_stacked "$RootFs/dev/shm"
+try_umount_stacked "$RootFs/dev/pts"
+try_umount_stacked "$RootFs/dev"
