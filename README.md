@@ -4,12 +4,6 @@
 
 简单、快速、优雅。
 
-> [!IMPORTANT]
-> **🧬 正在进化：Lina**
->
-> lina 正在进行核心架构重构，将进化为 **基于 Git 的微内核模块化系统**。
-> 新架构将带来极致的解耦与插件化支持，目前正在 [**refactor/microkernel**](../../tree/refactor/microkernel) 分支活跃开发中。
-
 ### 🛠️ 环境准备
 
 为了避免 Android Toybox 工具的兼容性问题, lina 强依赖 Termux 的二进制文件
