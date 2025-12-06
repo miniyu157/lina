@@ -18,7 +18,7 @@ Self="${0##*/}"
         rm -f "$LinaRoot/update.lock"
         echo ""
     }
-    (cd "$LinaRoot" && sh lina-update > /dev/null 2>&1 &)
+    (cd "$LinaRoot" && /system/bin/sh lina-update > /dev/null 2>&1 &)
 }
 
 G=$'\e[38;5;243m'
