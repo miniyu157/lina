@@ -53,7 +53,7 @@ RootFs="$BasePath/$Name"
     exit 1
 }
 
-if $ScriptDir/checkmount "$Name" > /dev/null 2>&1; then
+if "$ScriptDir"/checkmount "$Name" > /dev/null 2>&1; then
     error "必须先卸载文件系统才能删除。"
     exit 1
 fi

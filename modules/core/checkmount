@@ -58,7 +58,7 @@ check_mount() {
     local src="$1"
     local tgt="$2"
 
-    if $ScriptDir/is-mounted "$src" "$tgt"; then
+    if "$ScriptDir"/is-mounted "$src" "$tgt"; then
         msg2g "已挂载: %s" "$tgt"
         OVERALL_STATUS=0
         return 0

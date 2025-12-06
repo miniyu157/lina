@@ -64,7 +64,7 @@ TermuxTmp="/data/data/com.termux/files/usr/tmp"
 TarExcludeOpts=()
 DuExcludeOpts=()
 
-if $ScriptDir/is-mounted "$TermuxTmp" "$RootFs/tmp"; then
+if "$ScriptDir"/is-mounted "$TermuxTmp" "$RootFs/tmp"; then
     TarExcludeOpts+=(--exclude="$(basename "$RootFs")/tmp")
     DuExcludeOpts+=(--exclude="$RootFs/tmp")
 fi

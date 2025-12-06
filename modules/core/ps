@@ -27,10 +27,10 @@ for dir in "$BasePath"/*; do
     if [[ -d $dir ]]; then
         name="${dir##*/}"
 
-        pid_count=$($ScriptDir/proc "$name" pids 2> /dev/null | wc -l)
+        pid_count=$("$ScriptDir"/proc "$name" pids 2> /dev/null | wc -l)
         pid_count=$((pid_count + 0))
 
-        if $ScriptDir/checkmount "$name" > /dev/null 2>&1; then
+        if "$ScriptDir"/checkmount "$name" > /dev/null 2>&1; then
             mnt_status="Yes"
         else
             mnt_status="No"

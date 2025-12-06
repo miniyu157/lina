@@ -58,10 +58,10 @@ chroot_shutdown() {
     msg "终止: $target ..."
 
     # 尝试杀死相关进程
-    $ScriptDir/proc "$target" ka > /dev/null 2>&1
+    "$ScriptDir"/proc "$target" ka > /dev/null 2>&1
 
     # 卸载挂载点
-    $ScriptDir/umount "$target" > /dev/null 2>&1
+    "$ScriptDir"/umount "$target" > /dev/null 2>&1
 }
 
 if [[ $1 == "-a" ]]; then
