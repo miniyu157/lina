@@ -36,7 +36,7 @@ usage() {
 用法: $DisplayCmd <distro:version> [选项...] [Name]
 
 参数:
-  distro:version    发行版及版本 (如 arch:latest, ubuntu:22.04, alpine:3.21.0)
+  distro:version    发行版及版本, 如 ubuntu:22.04
   Name              自定义环境名称 (可选, 默认跟随 distro 名称)
 
 选项:
@@ -47,23 +47,14 @@ EOF
     exit 1
 }
 
+DistrosDir="$ScriptDir/distros"
+
 list_distros() {
-    cat << EOF
-支持的发行版列表:
-
-  Arch Linux
-    - arch:latest
-
-  Ubuntu Base
-    - ubuntu:24.04
-    - ubuntu:22.04
-    - ...
-  
-  Alpine Linux
-    - alpine:3.22.0
-    - alpine:3.22.0_rc3
-    - ...
-EOF
+    for f in "$DistrosDir"/*; do
+        [[ -f $f ]] || continue
+        n="${f##*/}"
+        printf "%s\n" "${n%.*}"
+    done
     exit 0
 }
 
@@ -121,47 +112,76 @@ if [[ -d $RootFs ]]; then
     exit 1
 fi
 
-get_meta() {
-    case "$Distro" in
-        arch)
-            TAR_BASENAME="ArchLinuxARM-aarch64-latest.tar.gz"
-            TAR_URL="http://os.archlinuxarm.org/os/${TAR_BASENAME}"
-            MD5_BASENAME="${TAR_BASENAME}.md5"
-            MD5_URL="http://os.archlinuxarm.org/os/${MD5_BASENAME}"
-
-            SUM_FILE="${BasePath}/${MD5_BASENAME}"
-            SUM_URL="$MD5_URL"
-            SUM_CMD="md5sum"
-            ;;
-        ubuntu)
-            TAR_BASENAME="ubuntu-base-${Version}-base-arm64.tar.gz"
-            TAR_URL="https://cdimage.ubuntu.com/ubuntu-base/releases/${Version}/release/${TAR_BASENAME}"
-            SUM_BASENAME="SHA256SUMS"
-
-            SUM_FILE="${BasePath}/ubuntu-${Version}-${SUM_BASENAME}"
-            SUM_URL="https://cdimage.ubuntu.com/ubuntu-base/releases/${Version}/release/${SUM_BASENAME}"
-            SUM_CMD="sha256sum"
-            ;;
-        alpine)
-            local AlpineVer="${Version%.*}"
-
-            TAR_BASENAME="alpine-minirootfs-${Version}-aarch64.tar.gz"
-            TAR_URL="https://dl-cdn.alpinelinux.org/alpine/v${AlpineVer}/releases/aarch64/${TAR_BASENAME}"
-            SHA256_BASENAME="${TAR_BASENAME}.sha256"
-            SHA256_URL="https://dl-cdn.alpinelinux.org/alpine/v${AlpineVer}/releases/aarch64/${SHA256_BASENAME}"
-
-            SUM_FILE="${BasePath}/${SHA256_BASENAME}"
-            SUM_URL="$SHA256_URL"
-            SUM_CMD="sha256sum"
-            ;;
-        *)
-            error "不支持的发行版: $Distro"
-            exit 1
-            ;;
-    esac
-    TAR_FILE="${BasePath}/${TAR_BASENAME}"
+# ---- 初始化发行版数据 ----
+DistroFile="$DistrosDir/$Distro.sh"
+# shellcheck disable=SC1090
+source "$DistroFile" > /dev/null 2>&1 || {
+    error "不支持的发行版: %s, 未找到定义文件。" "$Distro"
+    exit 1
+}
+command -v distro_init > /dev/null 2>&1 || {
+    error "定义文件损坏: '%s', 缺少 distro_init() 方法。" "$DistroFile"
+    exit 1
+}
+command -v distro_sum > /dev/null 2>&1 || distro_sum() {
+    "$SUM_CMD" -c "$2" > /dev/null 2>&1
+}
+command -v distro_hook > /dev/null 2>&1 || distro_hook() {
+    msg2 "未进行任何操作。"
 }
 
+distro_init
+
+# ---- 安装开始 ----
+cd "$BasePath" || exit 1
+
+msg "获取校验文件..."
+curl -sL -o "$SUM_FILE" "$SUM_URL"
+[[ -f $SUM_FILE ]] || {
+    error "下载校验文件失败。"
+    exit 1
+}
+
+if [[ -f $TAR_FILE ]]; then
+    msg "发现本地 tarball。正在校验, 使用 %s" "$SUM_CMD"
+    if distro_sum "$TAR_FILE" "$SUM_FILE"; then
+        msg2 "校验和通过, 跳过下载。"
+    else
+        msg2 "校验和错误, 重新下载。"
+        rm -f "$TAR_FILE"
+        curl -L -o "$TAR_FILE" "$TAR_URL"
+    fi
+else
+    msg "获取 tarball..."
+    msg2 "下载 $TAR_FILE..."
+    curl -L -o "$TAR_FILE" "$TAR_URL"
+fi
+
+[[ -f $TAR_FILE ]] || {
+    error "下载失败。"
+    rm -f "$SUM_FILE"
+    exit 1
+}
+
+distro_sum "$TAR_FILE" "$SUM_FILE" || {
+    error "下载文件校验失败!"
+    rm -f "$SUM_FILE"
+    exit 1
+}
+
+msg "创建目标目录: %s" "$RootFs"
+mkdir -p "$RootFs"
+
+msg "解压 tarball..."
+if ! tar -xpf "$TAR_FILE" -C "$RootFs"; then
+    error "'%s' 似乎不是 tar 归档文件, 确定发行版 %s 有版本 %s 吗?" "$TAR_FILE" "$Distro" "$Version"
+    rm -f "$TAR_FILE"
+    rm -f "$SUM_FILE"
+    rm -rf "$RootFs"
+    exit 1
+fi
+
+msg "进行后续处理..."
 post_configure() {
     local rootfs="$1"
     local resolv_conf="$rootfs/etc/resolv.conf"
@@ -169,7 +189,7 @@ post_configure() {
     mkdir -p "$rootfs/etc"
 
     if [[ ! -s $resolv_conf ]]; then
-        msg2 "修复 DNS 配置"
+        msg2 "修复 DNS 配置..."
         rm -f "$resolv_conf"
         echo "nameserver 8.8.8.8" > "$resolv_conf"
     fi
@@ -180,77 +200,9 @@ post_configure() {
 ::1             ip6-localhost
 EOF
 
-    # 发行版特定处理
-    case "$Distro" in
-        arch) ;;
-        ubuntu) ;;
-        alpine) ;;
-        kali) ;;
-    esac
+    msg "执行 distro_hook()..."
+    distro_hook "$rootfs"
 }
-
-get_meta
-
-msg "获取校验文件..."
-curl -sL -o "$SUM_FILE" "$SUM_URL"
-if [[ ! -f $SUM_FILE ]]; then
-    error "下载校验文件失败。"
-    exit 1
-fi
-
-cd "$BasePath" || exit 1
-
-check_sum() {
-    local sumfile="$2"
-
-    if [[ $Distro == "arch" || $Distro == "alpine" ]]; then
-        "$SUM_CMD" -c "$sumfile" > /dev/null 2>&1
-    elif [[ $Distro == "ubuntu" ]]; then
-        # Ubuntu 的校验文件包含列表，必须先 grep 过滤出当前文件
-        grep "$TAR_BASENAME" "$sumfile" | "$SUM_CMD" -c > /dev/null 2>&1
-    fi
-}
-
-if [[ -f $TAR_FILE ]]; then
-    msg "发现本地 tarball。正在校验, 使用 ${SUM_CMD%%sum}..."
-    if check_sum "$TAR_FILE" "$SUM_FILE"; then
-        msg2 "校验和通过, 跳过下载。"
-    else
-        msg2 "校验和错误, 重新下载。"
-        rm -f "$TAR_FILE"
-        curl -L -o "$TAR_FILE" "$TAR_URL"
-    fi
-else
-    msg "获取 tarball..."
-    msg2 "下载 $TAR_BASENAME..."
-    curl -L -o "$TAR_FILE" "$TAR_URL"
-fi
-
-if [[ ! -f $TAR_FILE ]]; then
-    error "下载失败。"
-    rm -f "$SUM_FILE"
-    exit 1
-fi
-
-if ! check_sum "$TAR_FILE" "$SUM_FILE"; then
-    error "下载文件校验失败。"
-    rm -f "$SUM_FILE"
-    exit 1
-fi
-
-msg "创建目标目录: $RootFs"
-mkdir -p "$RootFs"
-
-msg "解压 tarball..."
-if ! tar -xpf "$TAR_FILE" -C "$RootFs"; then
-    error "'$TAR_BASENAME' 似乎不是 tar 归档文件, 请检查发行版 $Distro 是否存在版本 $Version"
-    rm -f "$TAR_FILE"
-    rm -f "$SUM_FILE"
-    rm -rf "$RootFs"
-    exit 1
-fi
-
-msg "进行后续处理..."
 post_configure "$RootFs"
 
 rm -f "$SUM_FILE"
