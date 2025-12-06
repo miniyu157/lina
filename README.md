@@ -36,7 +36,7 @@ git clone https://github.com/miniyu157/lina.git ~/.local/bin/lina-bin
 ln -s ~/.local/bin/lina-bin/lina ~/.local/bin/lina
 ```
 
-> [!NOTE] Tip
+> [!NOTE]
 > 确保 `~/.local/bin` 位于 PATH 环境变量中
 
 *Enjoy it!*
@@ -49,10 +49,43 @@ ln -s ~/.local/bin/lina-bin/lina ~/.local/bin/lina
 lina install -l
 ```
 
-lina 目前支持 ubuntu, archlinux, alpine, 如果你先要安装更多的 linux 发行版, 可以自己修改 `./chroot-install` 脚本的 `get_meta`, 或者等待 lina 更新
+发行版数据存放在 `core/distros/` 文件夹中, 想要添加发行版, 直接在那里创建一个 `<distros>.sh` 即可
 
-> [!NOTE] Tip
-> lina 会尝试自动更新, 如果想要禁用更新, 新建一个空文件在 `./.lina-dev`, 这样就可以随意在本地修改代码了!
+当然, 也可以等待好心人给 lina 提交更多的发行版数据
+
+以下是发行版定义文件 `<distros>.sh` 的基本约束和说明, 通常放在文件开头
+
+```
+-----------------------------------------------------------------------------
+# Lina Distribution Definition
+# -----------------------------------------------------------------------------
+# [Protocol]
+# Context (Provided by main script):
+#   $Version   : User input version string (e.g., "22.04", "latest")
+#   $BasePath  : Chroot base directory (e.g., "/data/local/chroot")
+#
+# Mandatory Hook:
+#   distro_init()
+#     Must export the following global variables:
+#     -> $TAR_FILE : Absolute path for local tarball
+#     -> $SUM_FILE : Absolute path for local checksum file
+#     -> $TAR_URL  : Download URL for the tarball
+#     -> $SUM_URL  : Download URL for the checksum file
+#     -> $SUM_CMD  : Checksum command (e.g., "md5sum", "sha256sum")
+#
+# Optional Hooks (Override if necessary):
+#   distro_sum <tarball_path> <checksum_file_path>
+#     $1: Absolute path to the tarball
+#     $2: Absolute path to the checksum file
+#     Returns: 0 for success, non-zero for failure.
+#     Default: "$SUM_CMD" -c "$2"
+#
+#   distro_hook <rootfs_path>
+#     $1: Absolute path to the mounted rootfs
+#     Perform distro-specific post-install configuration here.
+#     Default: no-op
+# -----------------------------------------------------------------------------
+```
 
 ### 🤝 贡献
 
@@ -62,7 +95,9 @@ lina 目前支持 ubuntu, archlinux, alpine, 如果你先要安装更多的 linu
 
 **欢迎提交 Pull requests !**
 
-> 你可以直接运行 ./mock 来模拟 Android 的环境以调试, 前提是安装了 mksh 和 proot
+> [!NOTE]
+> 你可以直接运行 ./mock 来模拟 Android 的环境以调试, 前提是安装了 mksh 和 proot。
+> lina 会尝试自动更新, 如果想要禁用更新, 新建一个空文件在 `./.lina-dev`, 这样就可以随意在本地修改代码了!
 
 ### ⚖️ 许可证
 
