@@ -52,7 +52,7 @@ lina install -l
 发行版数据存放在 `core/distros/` 文件夹中, 想要添加发行版, 直接在那里创建一个 `<distros>.sh` 即可
 
 > [!NOTE]
-> 需要根据文档实现对应的方法, 位置在 [modules/core/distros/_README.txt](./modules/core/distros/_README.txt)
+> 需要根据文档实现对应的方法, 位置在 [cells/core/distros/_README.txt](./cells/core/distros/_README.txt)
 
 > 当然, lina 也会提交更多发行版的数据
 
