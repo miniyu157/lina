@@ -5,25 +5,15 @@
 
 # shellcheck shell=ksh
 
-if (($(id -u) != 0)); then
-    current_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-    quoted_args=$(printf " %q" "$@")
-    exec su -M -c "exec '$current_script'$quoted_args"
-fi
-ScriptDir="$(cd "$(dirname "$0")" && pwd)"
-
-# 启用此段以使用 makepkg 风格输出
-if [[ ! -f "$ScriptDir/lib/message.sh" ]]; then
-    echo "错误: 未找到 $ScriptDir/lib/message.sh" >&2
-    exit 1
-fi
-source "$ScriptDir/lib/message.sh"
-QUIET=0
-colorize
-
-# 启用以下两行以使用 Termux 中的二进制程序和库
+(($(id -u) != 0)) && exec su --mount-master -c "$(printf "%q " "$(readlink -f "$0")" "$@")"
+ScriptDir=$(dirname "$0")
 export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
-PATH="/data/data/com.termux/files/usr/bin:$PATH"
+export PATH="/data/data/com.termux/files/usr/bin:$PATH"
+[[ -f "$ScriptDir/lib/ui.sh" ]] || {
+    echo "错误: 未找到 $ScriptDir/lib/ui.sh" >&2
+    exit 1
+}
+source "$ScriptDir/lib/ui.sh"
 
 BasePath="/data/local/chroot"
 DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
@@ -45,18 +35,18 @@ EOF
 Name="$1"
 BackupDir="$2"
 [[ -z $Name ]] && {
-    error "未提供名称。"
+    m1err "未提供名称。"
     usage
 }
 [[ -z $BackupDir ]] && {
-    error "未提供备份目录。"
+    m1err "未提供备份目录。"
     usage
 }
 
 mkdir -p "$BackupDir"
 RootFs="$BasePath/$Name"
 [[ -d $RootFs ]] || {
-    error "目录 '$RootFs' 不存在。"
+    m1err "目录 '$RootFs' 不存在。"
     exit 1
 }
 
@@ -69,13 +59,13 @@ if "$ScriptDir"/is-mounted "$TermuxTmp" "$RootFs/tmp"; then
     DuExcludeOpts+=(--exclude="$RootFs/tmp")
 fi
 
-msg "统计存储占用..."
+m1 "统计存储占用..."
 RawSize=$(du -sbx "${DuExcludeOpts[@]}" "$RootFs" 2> /dev/null | awk '{print $1}')
 HumanSize=$(du -shx "${DuExcludeOpts[@]}" "$RootFs" 2> /dev/null | awk '{print $1}')
 
-msg "开始归档..."
+m1 "开始归档..."
 BackupFile="$BackupDir/$Name-$(date +'[%y]%m.%d-%H:%M:%S').tar.zst"
-msg2 "%s %s -> %s" "$HumanSize" "$Name" "$BackupFile"
+m2 "%s %s -> %s" "$HumanSize" "$Name" "$BackupFile"
 
 tar -cpf - \
     --one-file-system --warning=no-file-ignored \
@@ -86,8 +76,8 @@ tar -cpf - \
     zstd -T0 > "$BackupFile"
 
 if [[ -f $BackupFile ]]; then
-    msg "归档完成。"
+    m1 "归档完成。"
 else
-    warning "归档文件未生成。"
+    m1warn "归档文件未生成。"
     exit 1
 fi

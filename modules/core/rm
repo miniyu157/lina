@@ -5,25 +5,13 @@
 
 # shellcheck shell=ksh
 
-if (($(id -u) != 0)); then
-    current_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-    quoted_args=$(printf " %q" "$@")
-    exec su -M -c "exec '$current_script'$quoted_args"
-fi
-ScriptDir="$(cd "$(dirname "$0")" && pwd)"
-
-# 启用此段以使用 makepkg 风格输出
-if [[ ! -f "$ScriptDir/lib/message.sh" ]]; then
-    echo "错误: 未找到 $ScriptDir/lib/message.sh" >&2
+(($(id -u) != 0)) && exec su --mount-master -c "$(printf "%q " "$(readlink -f "$0")" "$@")"
+ScriptDir=$(dirname "$0")
+[[ -f "$ScriptDir/lib/ui.sh" ]] || {
+    echo "错误: 未找到 $ScriptDir/lib/ui.sh" >&2
     exit 1
-fi
-source "$ScriptDir/lib/message.sh"
-QUIET=0
-colorize
-
-# 启用以下两行以使用 Termux 中的二进制程序和库
-#export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
-#PATH="/data/data/com.termux/files/usr/bin:$PATH"
+}
+source "$ScriptDir/lib/ui.sh"
 
 BasePath="/data/local/chroot"
 DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
@@ -43,23 +31,23 @@ EOF
 
 Name="$1"
 [[ -z $Name ]] && {
-    error "未提供名称。"
+    m1err "未提供名称。"
     usage
 }
 
 RootFs="$BasePath/$Name"
 [[ -d $RootFs ]] || {
-    error "目录 '$RootFs' 不存在。"
+    m1err "目录 '$RootFs' 不存在。"
     exit 1
 }
 
 if "$ScriptDir"/checkmount "$Name" > /dev/null 2>&1; then
-    error "必须先卸载文件系统才能删除。"
+    m1err "必须先卸载文件系统才能删除。"
     exit 1
 fi
 
-warning "虽然未检测到挂载, 但是此命令可能不可靠, 建议手动检查挂载状态。"
-warning "即将执行 rm -rf %s" "$RootFs"
+m1warn "虽然未检测到挂载, 但是此命令可能不可靠, 建议手动检查挂载状态。"
+m1warn "即将执行 rm -rf %s" "$RootFs"
 
 printf "确定要删除 '%s' 吗? [y/N] " "$Name"
 read -r -n 1 ans

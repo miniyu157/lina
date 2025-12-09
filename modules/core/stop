@@ -5,25 +5,13 @@
 
 # shellcheck shell=ksh
 
-if (($(id -u) != 0)); then
-    current_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-    quoted_args=$(printf " %q" "$@")
-    exec su -M -c "exec '$current_script'$quoted_args"
-fi
-ScriptDir="$(cd "$(dirname "$0")" && pwd)"
-
-# 启用此段以使用 makepkg 风格输出
-if [[ ! -f "$ScriptDir/lib/message.sh" ]]; then
-    echo "错误: 未找到 $ScriptDir/lib/message.sh" >&2
+(($(id -u) != 0)) && exec su --mount-master -c "$(printf "%q " "$(readlink -f "$0")" "$@")"
+ScriptDir=$(dirname "$0")
+[[ -f "$ScriptDir/lib/ui.sh" ]] || {
+    echo "错误: 未找到 $ScriptDir/lib/ui.sh" >&2
     exit 1
-fi
-source "$ScriptDir/lib/message.sh"
-QUIET=0
-colorize
-
-# 启用以下两行以使用 Termux 中的二进制程序和库
-#export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
-#PATH="/data/data/com.termux/files/usr/bin:$PATH"
+}
+source "$ScriptDir/lib/ui.sh"
 
 BasePath="/data/local/chroot"
 DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
@@ -51,11 +39,11 @@ chroot_shutdown() {
     local rootfs="$BasePath/$target"
 
     [[ -d $rootfs ]] || {
-        error "目录 '$rootfs' 不存在，跳过。"
+        m1err "目录 '$rootfs' 不存在，跳过。"
         return 1
     }
 
-    msg "终止: $target ..."
+    m1 "终止: $target ..."
 
     # 尝试杀死相关进程
     "$ScriptDir"/proc "$target" ka > /dev/null 2>&1
@@ -66,7 +54,7 @@ chroot_shutdown() {
 
 if [[ $1 == "-a" ]]; then
     [[ -n $2 ]] && {
-        error "选项 -a 不能与名称共存。"
+        m1err "选项 -a 不能与名称共存。"
         usage
     }
 
@@ -77,7 +65,7 @@ if [[ $1 == "-a" ]]; then
             fi
         done
     else
-        error "目录 '$BasePath' 不存在。"
+        m1err "目录 '$BasePath' 不存在。"
         exit 1
     fi
 
@@ -87,7 +75,7 @@ elif [[ -n $1 ]]; then
     Name="$1"
     RootFs="$BasePath/$Name"
     [[ -d $RootFs ]] || {
-        error "目录 '$RootFs' 不存在。"
+        m1err "目录 '$RootFs' 不存在。"
         exit 1
     }
     chroot_shutdown "$Name"

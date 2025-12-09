@@ -1,4 +1,5 @@
 *.bak
 *.lock
 .lina-dev
+.fdignore
 .mock_env/

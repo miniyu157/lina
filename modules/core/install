@@ -5,25 +5,15 @@
 
 # shellcheck shell=ksh
 
-if (($(id -u) != 0)); then
-    current_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-    quoted_args=$(printf " %q" "$@")
-    exec su -M -c "exec '$current_script'$quoted_args"
-fi
-ScriptDir="$(cd "$(dirname "$0")" && pwd)"
-
-# 启用此段以使用 makepkg 风格输出
-if [[ ! -f "$ScriptDir/lib/message.sh" ]]; then
-    echo "错误: 未找到 $ScriptDir/lib/message.sh" >&2
-    exit 1
-fi
-source "$ScriptDir/lib/message.sh"
-QUIET=0
-colorize
-
-# 启用以下两行以使用 Termux 中的二进制程序和库
+(($(id -u) != 0)) && exec su -c "$(printf "%q " "$(readlink -f "$0")" "$@")"
+ScriptDir=$(dirname "$0")
 export LD_LIBRARY_PATH="/data/data/com.termux/files/usr/lib"
-PATH="/data/data/com.termux/files/usr/bin:$PATH"
+export PATH="/data/data/com.termux/files/usr/bin:$PATH"
+[[ -f "$ScriptDir/lib/ui.sh" ]] || {
+    echo "错误: 未找到 $ScriptDir/lib/ui.sh" >&2
+    exit 1
+}
+source "$ScriptDir/lib/ui.sh"
 
 BasePath="/data/local/chroot"
 DisplayCmd="${LINA_ENTRY:+$LINA_ENTRY $LINA_ACTION}"
@@ -88,7 +78,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z $DistroInput ]]; then
-    error "未指定发行版 (distro:version)。"
+    m1err "未指定发行版 (distro:version)。"
     usage
 fi
 
@@ -108,7 +98,7 @@ if [[ -d $RootFs ]]; then
     [[ -n $PendingName ]] &&
         ErrorMessage="$ErrorMessage 请用 -n 指定另外一个名称。"
 
-    error "$ErrorMessage"
+    m1err "$ErrorMessage"
     exit 1
 fi
 
@@ -116,11 +106,11 @@ fi
 DistroFile="$DistrosDir/$Distro.sh"
 # shellcheck disable=SC1090
 source "$DistroFile" > /dev/null 2>&1 || {
-    error "不支持的发行版: %s, 未找到定义文件。" "$Distro"
+    m1err "不支持的发行版: %s, 未找到定义文件。" "$Distro"
     exit 1
 }
 command -v distro_init > /dev/null 2>&1 || {
-    error "定义文件损坏: '%s', 缺少 distro_init() 方法。" "$DistroFile"
+    m1err "定义文件损坏: '%s', 缺少 distro_init() 方法。" "$DistroFile"
     exit 1
 }
 command -v distro_sum > /dev/null 2>&1 || distro_sum() {
@@ -135,55 +125,55 @@ distro_init
 # ---- 安装开始 ----
 cd "$BasePath" || exit 1
 
-msg "获取校验文件..."
+m1 "获取校验文件..."
 curl -sL -o "$SUM_FILE" "$SUM_URL"
 [[ -f $SUM_FILE ]] || {
-    error "下载校验文件失败。"
+    m1err "下载校验文件失败。"
     exit 1
 }
 
 if [[ -f $TAR_FILE ]]; then
-    msg "发现本地 tarball。正在校验, 使用 %s" "$SUM_CMD"
+    m1 "发现本地 tarball。正在校验, 使用 %s" "$SUM_CMD"
     if distro_sum "$TAR_FILE" "$SUM_FILE"; then
-        msg2 "校验和通过, 跳过下载。"
+        m2 "校验和通过, 跳过下载。"
     else
-        msg2 "校验和错误, 重新下载。"
+        m2 "校验和错误, 重新下载。"
         rm -f "$TAR_FILE"
         curl -L -o "$TAR_FILE" "$TAR_URL"
     fi
 else
-    msg "获取 tarball..."
-    msg2 "下载 $TAR_FILE..."
+    m1 "获取 tarball..."
+    m2 "下载 $TAR_FILE..."
     curl -L -o "$TAR_FILE" "$TAR_URL"
 
-    msg "正在校验...使用 %s" "$SUM_CMD"
+    m1 "正在校验...使用 %s" "$SUM_CMD"
     distro_sum "$TAR_FILE" "$SUM_FILE" || {
-        error "下载文件校验失败!"
+        m1err "下载文件校验失败!"
         rm -f "$SUM_FILE"
         exit 1
     }
-    msg2 "校验和通过。"
+    m2 "校验和通过。"
 fi
 
 [[ -f $TAR_FILE ]] || {
-    error "下载失败。"
+    m1err "下载失败。"
     rm -f "$SUM_FILE"
     exit 1
 }
 
-msg "创建目标目录: %s" "$RootFs"
+m1 "创建目标目录: %s" "$RootFs"
 mkdir -p "$RootFs"
 
-msg "解压 tarball..."
+m1 "解压 tarball..."
 if ! tar -xpf "$TAR_FILE" -C "$RootFs" ${TAR_STRIP:+--strip-components=$TAR_STRIP}; then
-    error "'%s' 似乎不是 tar 归档文件, 确定发行版 %s 有版本 %s 吗?" "$TAR_FILE" "$Distro" "$Version"
+    m1err "'%s' 似乎不是 tar 归档文件, 确定发行版 %s 有版本 %s 吗?" "$TAR_FILE" "$Distro" "$Version"
     rm -f "$TAR_FILE"
     rm -f "$SUM_FILE"
     rm -rf "$RootFs"
     exit 1
 fi
 
-msg "进行后续处理..."
+m1 "进行后续处理..."
 post_configure() {
     local rootfs="$1"
     local resolv_conf="$rootfs/etc/resolv.conf"
@@ -191,26 +181,26 @@ post_configure() {
     mkdir -p "$rootfs/etc"
 
     if [[ ! -s $resolv_conf ]]; then
-        msg2 "修复 DNS 配置..."
+        m2 "修复 DNS 配置..."
         rm -f "$resolv_conf"
         echo "nameserver 8.8.8.8" > "$resolv_conf"
     fi
 
-    msg2 "设置 hosts..."
+    m2 "设置 hosts..."
     cat > "$rootfs/etc/hosts" << EOF
 127.0.0.1       localhost
 ::1             ip6-localhost
 EOF
 
-    msg "执行 distro_hook()..."
+    m1 "执行 distro_hook()..."
     distro_hook "$rootfs"
 }
 post_configure "$RootFs"
 
 rm -f "$SUM_FILE"
 
-msg "安装完成: $Name ($DistroInput)"
-msg2 "Tarball 保留在: $TAR_FILE"
+m1 "安装完成: $Name ($DistroInput)"
+m2 "Tarball 保留在: $TAR_FILE"
 
 echo ""
 

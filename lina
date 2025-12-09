@@ -11,6 +11,12 @@ LINA_VERSION="r$(git -C "$LinaRoot" rev-list --count HEAD)-$(git -C "$LinaRoot" 
 Modules="$LinaRoot/modules"
 Self="${0##*/}"
 
+[[ -f "$LinaRoot/lib/ui.sh" ]] || {
+    echo "错误: 未找到 $LinaRoot/lib/ui.sh" >&2
+    exit 1
+}
+source "$LinaRoot/lib/ui.sh"
+
 [[ -f "$LinaRoot/.lina-dev" ]] || {
     [[ -f "$LinaRoot/update.lock" ]] && {
         echo "$Self 上次启动时进行了更新, 更新内容是:"
@@ -21,44 +27,36 @@ Self="${0##*/}"
     (cd "$LinaRoot" && /system/bin/sh lina-update > /dev/null 2>&1 &)
 }
 
-G=$'\e[38;5;243m'
-W=$'\e[0m'
-B=$'\e[1m'
-
-C_GRAY=$'\e[38;5;243m'
-C_GREEN=$'\e[32m'
-C_YELLOW=$'\e[33m'
-C_RESET=$'\e[0m'
-C_BLOD=$'\e[1m'
+G=${GRAY}
+F=$'\e[0m\e[1m'
 
 paint() {
-    sed -e "s/%B/$B/g" \
-        -e "s/%G/$G/g" \
-        -e "s/%W/$W/g"
+    sed -e "s/%F/$F/g" \
+        -e "s/%G/$G/g"
 }
 
 banner() {
     cat << 'EOF' | paint
 
-%G  .---.    %W%B.-./`)%W%G ,---.   .--.   ____     %W
-%G  | %W%B,_%W%G|    %W%B\ .-.')%W%G|    \  |  | .'  __ `.  %W
-%G%W%B,-./  )    / `-' \%W%G|  ,  \ |  |/   '  \  \ %W
-%G%W%B\  '_ '`)   `-'`"`%W%G|  |\_ \|  ||___|  /  | %W
-%G%W%B > (_)  )%W%G   .---. |  %W%B_( )_%W%G\  |   _.-`   | %W
-%G%W%B(  .  .-'%W%G   |   | | %W%B(_ o _)%W%G  |.'   %W%B_%W%G    | %W
-%G %W%B`-'`-'%W%G|___ |   | |  %W%B(_,_)%W%G\  ||  %W%B_( )_%W%G  | %W
-%G  |        \|   | |  |    |  |\ %W%B(_ o _)%W%G / %W
-%G  `--------`'---' '--'    '--' '.%W%B(_,_)%W%G.'  %W
+%G  .---.    %F.-./`)%G ,---.   .--.   ____     
+%G  | %F,_%G|    %F\ .-.')%G|    \  |  | .'  __ `.  
+%G%F,-./  )    / `-' \%G|  ,  \ |  |/   '  \  \ 
+%G%F\  '_ '`)   `-'`-`%G|  |\_ \|  ||___|  /  | 
+%G%F > (_)  )%G   .---. |  %F_( )_%G\  |   _.-`   | 
+%G%F(  .  .-'%G   |   | | %F(_ o _)%G  |.'   %F_%G    | 
+%G %F`-'`-'%G|___ |   | |  %F(_,_)%G\  ||  %F_( )_%G  | 
+%G  |        \|   | |  |    |  |\ %F(_ o _)%G / 
+%G  `--------`'---' '--'    '--' '.%F(_,_)%G.'  
 
 EOF
 }
 
 usage() {
     cat << EOF
-$Self $C_YELLOW($GitBranch)$C_RESET $C_GRAY$LINA_VERSION$C_RESET
+$Self $YELLOW($GitBranch)$COFF $GRAY$LINA_VERSION$COFF
 
-$C_BLOD用法: $Self [模块=core] <指令> [参数...]$C_RESET
-$C_BLOD指令:$C_RESET
+$BOLD用法: $Self [模块=core] <指令> [参数...]$COFF
+$BOLD指令:$COFF
 EOF
 
     MaxLen=0
@@ -82,7 +80,7 @@ EOF
             CmdList="$CmdList, ${Script##*/}"
         done
 
-        printf "  $C_GREEN%-${Pad}s$C_RESET %s\n" "$ModName" "${CmdList#, }"
+        printf "  $GREEN%-${Pad}s$COFF %s\n" "$ModName" "${CmdList#, }"
     done
 
     exit "${1:-0}"
