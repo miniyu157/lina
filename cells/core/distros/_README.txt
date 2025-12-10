@@ -12,7 +12,10 @@
 #     -> $TAR_FILE : Absolute path for local tarball
 #     -> $SUM_FILE : Absolute path for local checksum file
 #     -> $TAR_URL  : Download URL for the tarball
-#     -> $SUM_URL  : Download URL for the checksum file
+#     -> $SUM_URL  : Verification source. Supports 3 modes:
+#                      1. URL (http/ftp...): Download checksum file.
+#                      2. "SKIP": Disable verification.
+#                      3. Hex String: Treat as static hash (auto-generates sum file).
 #     -> $SUM_CMD  : Checksum command (e.g., "md5sum", "sha256sum")
 #     -> $TAR_STRIP: (Optional) Strip N leading components on extraction.
 #                    Set to "1" if tarball has a parent dir. Default: 0.
