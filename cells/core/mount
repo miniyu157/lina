@@ -21,15 +21,86 @@ usage() {
     cat << EOF
 挂载 chroot 文件系统。
 
-用法: $DisplayCmd <Name>
+用法: $DisplayCmd [选项...] [<挂载选项>挂载点...] <Name>
+示例: $DisplayCmd :proc +sys ubuntu
+
+选项:
+  -v --verbose    显示详细日志
+  -h --help       显示此帮助信息
 
 参数:
-  Name    chroot 环境的名称
+  Name            chroot 环境的名称
+
+挂载选项:
+  +               新建挂载点
+  :               绑定主机挂载
+
+挂载点:
+  dev             /dev
+  sys             /sys
+  proc            /proc
+  shm             /dev/shm
+  pts             /dev/pts
+  sdcard          /sdcard
+  tmp             /tmp (Termux tmp)
 EOF
-    exit 1
+    exit "${1:-0}"
 }
 
-Name="$1"
+_allowed_mnts="dev sys proc shm pts sdcard tmp"
+_mnts=()
+
+VERBOSE=0
+Name=""
+
+while (($# > 0)); do
+    case $1 in
+        -v | --verbose)
+            VERBOSE=1
+            shift
+            ;;
+        -h | --help)
+            usage 0
+            ;;
+        +* | :*)
+            _mnt_name="${1:1}"
+
+            for _exist in "${_mnts[@]}"; do
+                if [[ ${_exist:1} == "$_mnt_name" ]]; then
+                    if [[ $_exist == "$1" ]]; then
+                        shift
+                        continue 2
+                    else
+                        m1err "已定义 '%s', 不允许再次指定 '%s'" "$_exist" "$1"
+                        exit 1
+                    fi
+                fi
+            done
+
+            case "$_mnt_name" in
+                dev | sys | proc | shm | pts | sdcard | tmp)
+                    _mnts+=("$1")
+                    shift
+                    ;;
+                *)
+                    m1err "不支持的挂载点 '%s'" "$_mnt_name"
+                    exit 1
+                    ;;
+            esac
+
+            ;;
+        *)
+            [[ -z $Name ]] || {
+                m1err "多余的参数: '%s'" "$1"
+                exit 1
+            }
+
+            Name="$1"
+            shift
+            ;;
+    esac
+done
+
 [[ -z $Name ]] && {
     m1err "未提供名称。"
     usage 1
@@ -45,37 +116,61 @@ try_mount() {
     shift 2
 
     if "$ScriptDir"/is-mounted "$src" "$tgt"; then
-        m2yellow "跳过: %s" "$tgt"
+        ((VERBOSE)) && m2yellow "跳过: %s" "$tgt"
+        return 0
     else
+        mkdir -p "$tgt"
         if mount "$@" "$src" "$tgt" 2> /dev/null; then
-            m2green "成功: %s" "$tgt"
+            ((VERBOSE)) && m2green "成功: %s" "$tgt"
+            return 0
         else
-            m2err "失败: %s" "$tgt"
+            ((VERBOSE)) && m2err "失败: %s" "$tgt"
+            return 1
         fi
     fi
 }
 
-# /data
-if mount -o remount,dev,suid /data; then
-    m2green "成功: remount /data (dev,suid)"
-else
-    m2err "失败: remount /data (dev,suid)"
-fi
+OVERALL_STATUS=0
 
-# /tmp
-TERMUX_TMP="/data/data/com.termux/files/usr/tmp"
-CHROOT_TMP="$RootFs/tmp"
-mkdir -p "$TERMUX_TMP"
-chmod 1777 "$TERMUX_TMP"
-mkdir -p "$CHROOT_TMP"
-try_mount "$TERMUX_TMP" "$CHROOT_TMP" --bind
+for mnt_alias in "${_mnts[@]}"; do
+    op="${mnt_alias:0:1}"
+    mnt_name="${mnt_alias:1}"
+    src="" tgt="" fs="" fs_opts=""
 
-# /dev /dev/pts /dev/shm /proc /sys /sdcard
-try_mount /dev "$RootFs/dev" --bind
-mkdir -p "$RootFs/dev/pts" "$RootFs/dev/shm" \
-    "$RootFs/proc" "$RootFs/sys" "$RootFs/sdcard"
-try_mount devpts "$RootFs/dev/pts" -t devpts
-try_mount tmpfs "$RootFs/dev/shm" -t tmpfs -o mode=1777,size=512m
-try_mount proc "$RootFs/proc" -t proc
-try_mount sysfs "$RootFs/sys" -t sysfs
-try_mount /sdcard "$RootFs/sdcard" --bind
+    case "$mnt_name" in
+        dev)    src="/dev"      fs="tmpfs"  fs_opts="-o mode=0755,nosuid" ;;
+        sys)    src="/sys"      fs="sysfs"  fs_opts="-o nosuid,nodev,noexec" ;;
+        proc)   src="/proc"     fs="proc"   fs_opts="-o nosuid,nodev,noexec" ;;
+        shm)    src="/dev/shm"  fs="tmpfs"  fs_opts="-o mode=1777,size=512m,nosuid,nodev,noexec" ;;
+        pts)    src="/dev/pts"  fs="devpts" fs_opts="-o mode=620,ptmxmode=0666,gid=5,nosuid,nodev,noexec" ;;
+        sdcard) src="/sdcard"   fs="" ;;
+        tmp)    src="/data/data/com.termux/files/usr/tmp" fs="tmpfs" fs_opts="-o mode=1777,nosuid,nodev" ;;
+    esac
+
+    tgt="${RootFs}${src}"
+    [[ $mnt_name == "tmp" ]] && tgt="${RootFs}/tmp"
+
+    case "$op" in
+        "+")
+            [[ -z $fs ]] && {
+                ((VERBOSE)) && m2err "错误: '%s'不支持创建新的挂载点。" "$mnt_name"
+                OVERALL_STATUS=1
+                continue
+            }
+            src="${fs}"
+            action="-t ${fs} ${fs_opts}"
+            ;;
+        ":")
+            [[ -d $src ]] || {
+                ((VERBOSE)) && m2err "错误: 主机没有那个挂载点: %s" "$src"
+                continue
+            }
+            action="--bind"
+            ;;
+    esac
+    # shellcheck disable=SC2086
+    try_mount "$src" "$tgt" $action
+    (($? == 1)) && OVERALL_STATUS=1
+done
+
+return $OVERALL_STATUS
