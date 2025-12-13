@@ -1,0 +1,10 @@
+#!/system/bin/sh
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2025 Yumeka <miniyu157@163.com>
+
+# shellcheck shell=ksh
+
+(($(id -u) != 0)) && exec su --mount-master -c "$(printf "%q " "$(readlink -f "$0")" "$@")"
+
+exec mount -o remount,dev,suid /data
