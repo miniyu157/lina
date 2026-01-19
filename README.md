@@ -24,16 +24,14 @@ pkg install -y git curl pv
 
 > pv 是可选的, 如果没有安装 pv, `lina backup` 和 `lina restore` 命令就不会显示进度条
 
-> 默认的字体和配色不好看吗? 安装 [Termux:Styling](https://github.com/termux/termux-styling/releases) 换一个心仪的字体和配色吧。或者直接编辑或者替换 `/data/data/com.termux/files/home/.termux/font.ttf` 和 `/data/data/com.termux/files/home/.termux/colors.properties`
-
 ### 🚀 安装
 
 ```bash
-git clone https://github.com/miniyu157/lina.git ~/.local/bin/lina-bin
+git clone https://github.com/miniyu157/lina.git ~/.local/bin/lina-main
 ```
 
 ```bash
-ln -s ~/.local/bin/lina-bin/lina ~/.local/bin/lina
+ln -sf ~/.local/bin/lina-main/lina ~/.local/bin/lina
 ```
 
 > [!NOTE]
