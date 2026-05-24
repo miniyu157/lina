@@ -45,34 +45,21 @@ EOF
     exit 1
 }
 
-check_opt_arg() {
-    local -n target_var="$1"
-    local opt_name="$2" args_count="$3" opt_val="${4:-}"
-
-    ((args_count < 2)) && {
-        printf "错误: 选项 %s 需要提供一个参数。\n" "$opt_name" >&2
-        exit 1
-    }
-    [[ $opt_val == -* ]] && {
-        printf "错误: 选项 %s 的参数不能以 '-' 开头 (得到: %s)。\n" "$opt_name" "$opt_val" >&2
-        exit 1
-    }
-    # shellcheck disable=SC2034
-    target_var="$opt_val"
-}
+OPTS=$(getopt -o "r:m:b:fcXo:h" -l "repo:,remote:,branch:,force,clean,clean-all,fetch-timeout:,output:,help" -n "$SELF" -- "$@") || exit 1
+eval set -- "$OPTS"
 
 while (($#)); do
     case "$1" in
         -r | --repo)
-            check_opt_arg "CONFIG[repo]" "$1" "$#" "${2:-}"
+            CONFIG[repo]="$2"
             shift 2
             ;;
         -m | --remote)
-            check_opt_arg "CONFIG[remote]" "$1" "$#" "${2:-}"
+            CONFIG[remote]="$2"
             shift 2
             ;;
         -b | --branch)
-            check_opt_arg "CONFIG[branch]" "$1" "$#" "${2:-}"
+            CONFIG[branch]="$2"
             shift 2
             ;;
         -f | --force)
@@ -88,26 +75,31 @@ while (($#)); do
             shift
             ;;
         --fetch-timeout)
-            check_opt_arg "CONFIG[fetch_timeout]" "$1" "$#" "${2:-}"
+            CONFIG[fetch_timeout]="$2"
+            shift 2
             [[ ${CONFIG[fetch_timeout]} =~ ^[1-9][0-9]*$ ]] || {
                 printf "错误: --fetch-timeout 的参数必须是正整数 (得到: %s)。\n" "${CONFIG[fetch_timeout]}" >&2
                 exit 1
             }
-            shift 2
             ;;
         -o | --output)
-            check_opt_arg "CONFIG[output]" "$1" "$#" "${2:-}"
+            CONFIG[output]="$2"
             shift 2
             ;;
         -h | --help)
             usage
             ;;
-        *)
-            printf "错误: 未知选项或参数 '%s'。\n" "$1" >&2
-            usage
+        --)
+            shift
+            break
             ;;
     esac
 done
+
+(($#)) && {
+    printf "错误: 多余参数: %s\n" "$*" >&2
+    exit 1
+}
 
 # -- 切换到参数指定的仓库根目录 --
 repo_root=$(git -C "${CONFIG[repo]}" rev-parse --show-toplevel 2> /dev/null) || {
