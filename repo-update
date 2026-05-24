@@ -4,7 +4,6 @@ set -euo pipefail
 shopt -s inherit_errexit 2> /dev/null || true
 
 SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
-SELF_DIR="${SELF_PATH%/*}" SELF_DIR="${SELF_DIR:-/}"
 
 declare -A CONFIG=(
     [repo]="."
