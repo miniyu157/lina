@@ -13,6 +13,7 @@ declare -A CONFIG=(
     [force]=false
     [clean]=false
     [clean_all]=false
+    [fetch_timeout]="30"
     [output]=""
 
 )
@@ -30,10 +31,13 @@ usage() {
   -m, --remote <NAME>    指定远程主机 (默认: origin)
   -b, --branch <NAME>    指定要同步的分支 (默认: 当前所在分支)
 
-清理与安全选项:
+安全选项:
   -f, --force            跳过工作区检查，强制覆盖本地未提交的修改
   -c, --clean            清理未跟踪的文件和目录 (执行 git clean -fd)
   -X, --clean-all        清理未跟踪及被忽略的文件 (执行 git clean -fdx)
+
+网络选项:
+  --fetch-timeout <SEC>  设置执行 git fetch 时的超时时间 (默认: 30, 单位: 秒)
 
 输出选项:
   -o, --output <FILE>    将更新日志输出到指定文件
@@ -64,6 +68,10 @@ while (($#)); do
             check_opt_arg "CONFIG[repo]" "$1" "$#" "${2:-}"
             shift 2
             ;;
+        -m | --remote)
+            check_opt_arg "CONFIG[remote]" "$1" "$#" "${2:-}"
+            shift 2
+            ;;
         -b | --branch)
             check_opt_arg "CONFIG[branch]" "$1" "$#" "${2:-}"
             shift 2
@@ -80,12 +88,16 @@ while (($#)); do
             CONFIG[clean_all]=true
             shift
             ;;
-        -o | --output)
-            check_opt_arg "CONFIG[output]" "$1" "$#" "${2:-}"
+        --fetch-timeout)
+            check_opt_arg "CONFIG[fetch_timeout]" "$1" "$#" "${2:-}"
+            [[ ${CONFIG[fetch_timeout]} =~ ^[1-9][0-9]*$ ]] || {
+                printf "错误: --fetch-timeout 的参数必须是正整数 (得到: %s)。\n" "${CONFIG[fetch_timeout]}" >&2
+                exit 1
+            }
             shift 2
             ;;
-        -m | --remote)
-            check_opt_arg "CONFIG[remote]" "$1" "$#" "${2:-}"
+        -o | --output)
+            check_opt_arg "CONFIG[output]" "$1" "$#" "${2:-}"
             shift 2
             ;;
         -h | --help)
@@ -128,7 +140,7 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
 fi
 
 # -- 并发锁 --
-lock_file="$repo_root/${SELF}.lock"
+lock_file="$repo_root/.git/${SELF}.lock"
 exec {lock_fd}> "$lock_file"
 if ! flock -w 3 "$lock_fd"; then
     printf "错误: 另一个实例正在运行，等待超时，退出。\n" >&2
@@ -142,7 +154,7 @@ git remote get-url "${CONFIG[remote]}" 2> /dev/null || {
 }
 
 # -- 拉取最新数据 --
-if ! timeout 30 git fetch -q "${CONFIG[remote]}"; then
+if ! timeout "${CONFIG[fetch_timeout]}" git fetch -q "${CONFIG[remote]}"; then
     printf "错误: 无法从 %s 拉取数据 (可能网络超时或认证失败)。\n" "${CONFIG[remote]}" >&2
     exit 1
 fi
@@ -184,7 +196,6 @@ fi
 
 # -- 输出处理 --
 if [[ -n ${CONFIG[output]} ]]; then
-    [[ -f ${CONFIG[output]} ]] && cp -f "${CONFIG[output]}" "${CONFIG[output]}.bak"
     if [[ $local_head == "$remote_head" ]]; then
         : > "${CONFIG[output]}"
     else
