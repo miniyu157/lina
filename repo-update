@@ -8,22 +8,35 @@ SELF_DIR="${SELF_PATH%/*}" SELF_DIR="${SELF_DIR:-/}"
 
 declare -A CONFIG=(
     [repo]="."
-    [force]=false
-    [output]=""
     [remote]="origin"
+    [branch]=""
+    [force]=false
+    [clean]=false
+    [clean_all]=false
+    [output]=""
+
 )
 
 usage() {
     cat << EOF >&2
 用法: ${SELF} [选项] [参数]
 
-通用 Git 仓库更新器。
+通用 Git 仓库单向同步工具。
+专为自动化部署设计，此工具使用 fetch + reset --hard 逻辑。
+注意: 本地领先或分叉的提交将被丢弃。
 
-选项:
-  -r, --repo <PATH=.>    指定 Git 仓库路径
-  --remote <NAME>        指定远程, 默认为 origin
-  -f, --force            即使工作区不干净也强制更新
-  -o, --output <PATH>    输出更新日志到文件
+目标选项:
+  -r, --repo <DIR>       指定 Git 仓库路径 (默认: 当前工作目录)
+  -m, --remote <NAME>    指定远程主机 (默认: origin)
+  -b, --branch <NAME>    指定要同步的分支 (默认: 当前所在分支)
+
+清理与安全选项:
+  -f, --force            跳过工作区检查，强制覆盖本地未提交的修改
+  -c, --clean            清理未跟踪的文件和目录 (执行 git clean -fd)
+  -X, --clean-all        清理未跟踪及被忽略的文件 (执行 git clean -fdx)
+
+输出选项:
+  -o, --output <FILE>    将更新日志输出到指定文件
   -h, --help             显示此帮助信息
 EOF
     exit 1
@@ -51,15 +64,27 @@ while (($#)); do
             check_opt_arg "CONFIG[repo]" "$1" "$#" "${2:-}"
             shift 2
             ;;
+        -b | --branch)
+            check_opt_arg "CONFIG[branch]" "$1" "$#" "${2:-}"
+            shift 2
+            ;;
         -f | --force)
             CONFIG[force]=true
+            shift
+            ;;
+        -c | --clean)
+            CONFIG[clean]=true
+            shift
+            ;;
+        -X | --clean-all)
+            CONFIG[clean_all]=true
             shift
             ;;
         -o | --output)
             check_opt_arg "CONFIG[output]" "$1" "$#" "${2:-}"
             shift 2
             ;;
-        --remote)
+        -m | --remote)
             check_opt_arg "CONFIG[remote]" "$1" "$#" "${2:-}"
             shift 2
             ;;
@@ -83,16 +108,16 @@ cd "$repo_root" || {
     exit 1
 }
 
-# -- 仓库所需变量 --
-lock_file="$repo_root/${SELF}.lock" # 锁文件在仓库目录下
-git_branch=$(git rev-parse --abbrev-ref HEAD)
-git_remote_branch="${CONFIG[remote]}/${git_branch}" # 构造类似 origin/main
-
-# -- 检查指针正确 --
-[[ $git_branch == "HEAD" ]] && {
-    printf "错误: 当前处于 detached HEAD 状态，拒绝更新 (请先切换到某个分支)。\n" >&2
-    exit 1
-}
+# -- 确定目标分支 --
+if [[ -n ${CONFIG[branch]} ]]; then
+    git_branch="${CONFIG[branch]}"
+else
+    git_branch=$(git rev-parse --abbrev-ref HEAD)
+    [[ $git_branch == "HEAD" ]] && {
+        printf "错误: 当前处于 detached HEAD 状态，拒绝更新 (请先切换到某个分支)。\n" >&2
+        exit 1
+    }
+fi
 
 # -- 检查干净状态 --
 if ! git diff --quiet || ! git diff --cached --quiet; then
@@ -103,11 +128,18 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
 fi
 
 # -- 并发锁 --
+lock_file="$repo_root/${SELF}.lock"
 exec {lock_fd}> "$lock_file"
 if ! flock -w 3 "$lock_fd"; then
     printf "错误: 另一个实例正在运行，等待超时，退出。\n" >&2
     exit 1
 fi
+
+# -- 检查远程仓库配置 --
+git remote get-url "${CONFIG[remote]}" 2> /dev/null || {
+    printf "错误: 远程仓库 %s 未配置。\n" "${CONFIG[remote]}" >&2
+    exit 1
+}
 
 # -- 拉取最新数据 --
 if ! timeout 30 git fetch -q "${CONFIG[remote]}"; then
@@ -115,26 +147,52 @@ if ! timeout 30 git fetch -q "${CONFIG[remote]}"; then
     exit 1
 fi
 
-# -- 更新 --
+# -- 切换到目标分支 --
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ $current_branch != "$git_branch" ]]; then
+    switch_opts=()
+    ${CONFIG[force]} && switch_opts=(-f)
+    if git show-ref --verify --quiet "refs/heads/$git_branch"; then
+        git switch "${switch_opts[@]}" "$git_branch" > /dev/null 2>&1
+    elif git show-ref --verify --quiet "refs/remotes/${CONFIG[remote]}/$git_branch"; then
+        git switch "${switch_opts[@]}" -c "$git_branch" "${CONFIG[remote]}/$git_branch" > /dev/null 2>&1
+    else
+        printf "错误: 分支 %s 在本地和远程 %s 均不存在。\n" "$git_branch" "${CONFIG[remote]}" >&2
+        exit 1
+    fi
+fi
+
+git_remote_branch="${CONFIG[remote]}/${git_branch}"
+
+# -- 检查指针 --
 local_head=$(git rev-parse HEAD)
 remote_head=$(git rev-parse "$git_remote_branch" 2> /dev/null) || {
     printf "错误: 远程分支 %s 不存在。\n" "$git_remote_branch" >&2
     exit 1
 }
 
-if [[ $local_head == "$remote_head" ]]; then
-    if [[ -n ${CONFIG[output]} ]]; then
-        [[ -f ${CONFIG[output]} ]] && cp -f "${CONFIG[output]}" "${CONFIG[output]}.bak"
-        : > "${CONFIG[output]}"
-    fi
-    exit 0
-else
+if [[ $local_head != "$remote_head" ]]; then
     git reset --hard "$git_remote_branch" > /dev/null
-    if [[ -n ${CONFIG[output]} ]]; then
-        [[ -f ${CONFIG[output]} ]] && cp -f "${CONFIG[output]}" "${CONFIG[output]}.bak"
+fi
+
+# -- 清理未跟踪文件 --
+if ${CONFIG[clean_all]}; then
+    git clean -fdx > /dev/null
+elif ${CONFIG[clean]}; then
+    git clean -fd > /dev/null
+fi
+
+# -- 输出处理 --
+if [[ -n ${CONFIG[output]} ]]; then
+    [[ -f ${CONFIG[output]} ]] && cp -f "${CONFIG[output]}" "${CONFIG[output]}.bak"
+    if [[ $local_head == "$remote_head" ]]; then
+        : > "${CONFIG[output]}"
+    else
         if ! git log --color=always --format='%C(243)[%h]%C(reset) %s' "$local_head..$git_remote_branch" > "${CONFIG[output]}" 2> /dev/null; then
             printf "错误: 无法生成提交日志。\n" >&2
             exit 1
         fi
     fi
 fi
+
+[[ $local_head == "$remote_head" ]] && exit 0
