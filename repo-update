@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+shopt -s inherit_errexit 2> /dev/null || true
+
+SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
+
+declare -A CONFIG=(
+    [repo]="."
+    [remote]="origin"
+    [branch]=""
+    [force]=false
+    [clean]=false
+    [clean_all]=false
+    [fetch_timeout]="30"
+    [output]=""
+
+)
+
+usage() {
+    cat << EOF >&2
+用法: ${SELF} [选项] [参数]
+
+通用 Git 仓库单向同步工具。
+专为自动化部署设计，此工具使用 fetch + reset --hard 逻辑。
+注意: 本地领先或分叉的提交将被丢弃。
+
+目标选项:
+  -r, --repo <DIR>       指定 Git 仓库路径 (默认: 当前工作目录)
+  -m, --remote <NAME>    指定远程主机 (默认: origin)
+  -b, --branch <NAME>    指定要同步的分支 (默认: 当前所在分支)
+
+安全选项:
+  -f, --force            跳过工作区检查，强制覆盖本地未提交的修改
+  -c, --clean            清理未跟踪的文件和目录 (执行 git clean -fd)
+  -X, --clean-all        清理未跟踪及被忽略的文件 (执行 git clean -fdx)
+
+网络选项:
+  --fetch-timeout <SEC>  设置执行 git fetch 时的超时时间 (默认: 30, 单位: 秒)
+
+输出选项:
+  -o, --output <FILE>    将更新日志输出到指定文件
+  -h, --help             显示此帮助信息
+EOF
+    exit 1
+}
+
+OPTS=$(getopt -o "r:m:b:fcXo:h" -l "repo:,remote:,branch:,force,clean,clean-all,fetch-timeout:,output:,help" -n "$SELF" -- "$@") || exit 1
+eval set -- "$OPTS"
+
+while (($#)); do
+    case "$1" in
+        -r | --repo)
+            CONFIG[repo]="$2"
+            shift 2
+            ;;
+        -m | --remote)
+            CONFIG[remote]="$2"
+            shift 2
+            ;;
+        -b | --branch)
+            CONFIG[branch]="$2"
+            shift 2
+            ;;
+        -f | --force)
+            CONFIG[force]=true
+            shift
+            ;;
+        -c | --clean)
+            CONFIG[clean]=true
+            shift
+            ;;
+        -X | --clean-all)
+            CONFIG[clean_all]=true
+            shift
+            ;;
+        --fetch-timeout)
+            CONFIG[fetch_timeout]="$2"
+            shift 2
+            [[ ${CONFIG[fetch_timeout]} =~ ^[1-9][0-9]*$ ]] || {
+                printf "错误: --fetch-timeout 的参数必须是正整数 (得到: %s)。\n" "${CONFIG[fetch_timeout]}" >&2
+                exit 1
+            }
+            ;;
+        -o | --output)
+            CONFIG[output]="$2"
+            shift 2
+            ;;
+        -h | --help)
+            usage
+            ;;
+        --)
+            shift
+            break
+            ;;
+    esac
+done
+
+(($#)) && {
+    printf "错误: 多余参数: %s\n" "$*" >&2
+    exit 1
+}
+
+# -- 切换到参数指定的仓库根目录 --
+repo_root=$(git -C "${CONFIG[repo]}" rev-parse --show-toplevel 2> /dev/null) || {
+    printf "错误: 指定的路径不是一个有效的 Git 仓库: %s\n" "${CONFIG[repo]}" >&2
+    exit 1
+}
+cd "$repo_root" || {
+    printf "错误: 无法进入仓库根目录: %s\n" "$repo_root" >&2
+    exit 1
+}
+
+# -- 确定目标分支 --
+if [[ -n ${CONFIG[branch]} ]]; then
+    git_branch="${CONFIG[branch]}"
+else
+    git_branch=$(git rev-parse --abbrev-ref HEAD)
+    [[ $git_branch == "HEAD" ]] && {
+        printf "错误: 当前处于 detached HEAD 状态，拒绝更新 (请先切换到某个分支)。\n" >&2
+        exit 1
+    }
+fi
+
+# -- 检查干净状态 --
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    if ! ${CONFIG[force]}; then
+        printf "错误: 工作区不干净，存在未提交的修改。使用 --force 可强制继续。\n" >&2
+        exit 1
+    fi
+fi
+
+# -- 并发锁 --
+lock_file="$repo_root/.git/${SELF}.lock"
+exec {lock_fd}> "$lock_file"
+if ! flock -w 3 "$lock_fd"; then
+    printf "错误: 另一个实例正在运行，等待超时，退出。\n" >&2
+    exit 1
+fi
+
+# -- 检查远程仓库配置 --
+git remote get-url "${CONFIG[remote]}" 2> /dev/null || {
+    printf "错误: 远程仓库 %s 未配置。\n" "${CONFIG[remote]}" >&2
+    exit 1
+}
+
+# -- 拉取最新数据 --
+if ! timeout "${CONFIG[fetch_timeout]}" git fetch -q "${CONFIG[remote]}"; then
+    printf "错误: 无法从 %s 拉取数据 (可能网络超时或认证失败)。\n" "${CONFIG[remote]}" >&2
+    exit 1
+fi
+
+# -- 切换到目标分支 --
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ $current_branch != "$git_branch" ]]; then
+    switch_opts=()
+    ${CONFIG[force]} && switch_opts=(-f)
+    if git show-ref --verify --quiet "refs/heads/$git_branch"; then
+        git switch "${switch_opts[@]}" "$git_branch" > /dev/null 2>&1
+    elif git show-ref --verify --quiet "refs/remotes/${CONFIG[remote]}/$git_branch"; then
+        git switch "${switch_opts[@]}" -c "$git_branch" "${CONFIG[remote]}/$git_branch" > /dev/null 2>&1
+    else
+        printf "错误: 分支 %s 在本地和远程 %s 均不存在。\n" "$git_branch" "${CONFIG[remote]}" >&2
+        exit 1
+    fi
+fi
+
+git_remote_branch="${CONFIG[remote]}/${git_branch}"
+
+# -- 检查指针 --
+local_head=$(git rev-parse HEAD)
+remote_head=$(git rev-parse "$git_remote_branch" 2> /dev/null) || {
+    printf "错误: 远程分支 %s 不存在。\n" "$git_remote_branch" >&2
+    exit 1
+}
+
+if [[ $local_head != "$remote_head" ]]; then
+    git reset --hard "$git_remote_branch" > /dev/null
+fi
+
+# -- 清理未跟踪文件 --
+if ${CONFIG[clean_all]}; then
+    git clean -fdx > /dev/null
+elif ${CONFIG[clean]}; then
+    git clean -fd > /dev/null
+fi
+
+# -- 输出处理 --
+if [[ -n ${CONFIG[output]} ]]; then
+    if [[ $local_head == "$remote_head" ]]; then
+        : > "${CONFIG[output]}"
+    else
+        if ! git log --color=always --format='%C(243)[%h]%C(reset) %s' "$local_head..$git_remote_branch" > "${CONFIG[output]}" 2> /dev/null; then
+            printf "错误: 无法生成提交日志。\n" >&2
+            exit 1
+        fi
+    fi
+fi
+
+[[ $local_head == "$remote_head" ]] && exit 0

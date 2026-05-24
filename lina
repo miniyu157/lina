@@ -1,125 +1,152 @@
-#!/system/bin/sh
+#!/usr/bin/env bash
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright (C) 2025 Yumeka <miniyu157@163.com>
+# @ui COFF=0m BOLD=1m FAINT=2m ITALIC=3m ULINE=4m INVERT=7m HIDE=8m DLINE=9m
 
-# shellcheck shell=ksh
+# @ui RED=31m     GREEN=32m     YELLOW=33m     BLUE=34m     MAGENTA=35m     CYAN=36m     WHITE=37m GRAY=90m
+# @ui bgRED=41m   bgGREEN=42m   bgYELLOW=43m   bgBLUE=44m   bgMAGENTA=45m   bgCYAN=46m   bgWHITE=47m
+# @ui FOFF=39m BOFF=49m
 
-LinaRoot="$(dirname "$(readlink -f "$0")")"
-GitBranch="$(git -C "$LinaRoot" rev-parse --abbrev-ref HEAD)"
-LINA_VERSION="r$(git -C "$LinaRoot" rev-list --count HEAD)-$(git -C "$LinaRoot" rev-parse --short HEAD)"
-Modules="$LinaRoot/cells"
-Self="${0##*/}"
+# @off
 
-[[ -f "$LinaRoot/lib/ui.sh" ]] || {
-    echo "错误: 未找到 $LinaRoot/lib/ui.sh" >&2
-    exit 1
+set -euo pipefail
+shopt -s inherit_errexit 2> /dev/null || true
+
+# shellcheck shell=bash
+
+LINA_ROOT="$(dirname "$(readlink -f "$0")")"
+LINA_VERSION="r$(git -C "$LINA_ROOT" rev-list --count HEAD)-$(git -C "$LINA_ROOT" rev-parse --short HEAD)"
+GIT_BRANCH="$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD)"
+
+export LINA_ROOT
+export LINA_VERSION
+export GIT_BRANCH
+export MODS_DIR="$LINA_ROOT/cells"
+export DEFAULT_MOD="core"
+# export WORKER_DIR="/data/local/lina"
+export WORKER_DIR="$LINA_ROOT/data"
+
+SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
+
+init_ui() {
+    [[ ! -t 1 && -z $FORCE_COLOR ]] && return
+    local line pair key val ansi_header=$'\e['
+    while read -r line; do
+        [[ $line == "# @off"* ]] && return
+        [[ $line == "# @ui "* ]] && for pair in ${line#\# @ui }; do
+            key="${pair%%=*}" val="${pair#*=}"
+            declare -g "${key}=${ansi_header}${val}"
+        done
+    done < "$SELF_PATH"
+
+    export hl="${CYAN}${INVERT}"
+    export off="${COFF}"
 }
-source "$LinaRoot/lib/ui.sh"
 
-[[ -f "$LinaRoot/.lina-dev" ]] || {
-    [[ -f "$LinaRoot/update.lock" ]] && {
-        echo "$Self 上次启动时进行了更新, 更新内容是:"
-        cat "$LinaRoot/update.lock"
-        rm -f "$LinaRoot/update.lock"
-        echo ""
+update() {
+    [[ -f "$LINA_ROOT/.lina-dev" ]] || {
+        if [[ -s "$LINA_ROOT/update.lock" ]]; then
+            echo "$SELF 上次启动时进行了更新, 更新内容是:"
+            cat "$LINA_ROOT/update.lock"
+            echo ""
+        fi
+        rm -f "$LINA_ROOT/update.lock"
+        (bash "$LINA_ROOT/repo-update" --repo "$LINA_ROOT" --output "$LINA_ROOT/update.lock" -f > /dev/null 2>&1 &)
     }
-    (cd "$LinaRoot" && /system/bin/sh lina-update > /dev/null 2>&1 &)
-}
-
-G=${GRAY}
-F=$'\e[0m\e[1m'
-
-paint() {
-    sed -e "s/%F/$F/g" \
-        -e "s/%G/$G/g"
 }
 
 banner() {
-    cat << 'EOF' | paint
-
-%G  .---.    %F.-./`)%G ,---.   .--.   ____     
-%G  | %F,_%G|    %F\ .-.')%G|    \  |  | .'  __ `.  
-%G%F,-./  )    / `-' \%G|  ,  \ |  |/   '  \  \ 
-%G%F\  '_ '`)   `-'`-`%G|  |\_ \|  ||___|  /  | 
-%G%F > (_)  )%G   .---. |  %F_( )_%G\  |   _.-`   | 
-%G%F(  .  .-'%G   |   | | %F(_ o _)%G  |.'   %F_%G    | 
-%G %F`-'`-'%G|___ |   | |  %F(_,_)%G\  ||  %F_( )_%G  | 
-%G  |        \|   | |  |    |  |\ %F(_ o _)%G / 
-%G  `--------`'---' '--'    '--' '.%F(_,_)%G.'  
-
-EOF
+    # shellcheck disable=SC2016
+    printf '%b' '  \e[2m.---.    \e[33;22;1m.-./`) \e[0m\e[2m,---.   .--.   ____     \e[0m\n' \
+        '  \e[2m| \e[33;22;1m,_\e[0m\e[2m|    \e[33;22;1m\\ \e[32m.-.\e[33m'\'')\e[0m\e[2m|    \\  |  | .'\''  __ `.  \e[0m\n' \
+        '\e[33;1m,-./  )    / \e[32m`-'\'' \e[33m\\\e[0m\e[2m|  ,  \\ |  |/   '\''  \\  \\ \e[0m\n' \
+        '\e[33;1m\\  '\''\e[32m_ \e[33m'\''`)   `-'\''`-`\e[0m\e[2m|  |\\\e[33;22;1m_ \e[0m\e[2m\\|  ||___|  /  | \e[0m\n' \
+        ' \e[33;1m> \e[32m(_)  \e[33m)   \e[0m\e[2m.---. |  \e[33;22;1m_( )_\e[0m\e[2m\\  |   _.-`   | \e[0m\n' \
+        '\e[33;1m(  .  .-'\''   \e[0m\e[2m|   | | \e[33;22;1m(_ \e[32mo \e[33m_)  \e[0m\e[2m|.'\''   \e[33;22;1m_    \e[0m\e[2m| \e[0m\n' \
+        ' \e[33;1m`-'\''`-'\''\e[0m\e[2m|___ |   | |  \e[33;22;1m(_,_)\e[0m\e[2m\\  ||  \e[33;22;1m_( )_  \e[0m\e[2m| \e[0m\n' \
+        '  \e[2m|        \\|   | |  |    |  |\\ \e[33;22;1m(_ \e[32mo \e[33m_) \e[0m\e[2m/ \e[0m\n' \
+        '  \e[2m`--------`'\''---'\'' '\''--'\''    '\''--'\'' '\''.\e[33;22;1m(_,_)\e[0m\e[2m.'\''  \e[0m\n' \
+        '                                          \n'
 }
 
 usage() {
     cat << EOF
-$Self $YELLOW($GitBranch)$COFF $GRAY$LINA_VERSION$COFF
+${SELF} ${YELLOW}(${GIT_BRANCH})${COFF} ${GRAY}${LINA_VERSION}${COFF}
 
-$BOLD用法: $Self [模块=core] <指令> [参数...]$COFF
-$BOLD指令:$COFF
+${BOLD}用法: ${SELF} [模块=${DEFAULT_MOD}] <指令> [参数...]${COFF}
+${BOLD}指令:${COFF}
 EOF
 
-    MaxLen=0
-    for ModPath in "$Modules"/*; do
-        [[ -d $ModPath ]] || continue
-        Name="${ModPath##*/}"
-        Len=${#Name}
-        ((Len > MaxLen)) && MaxLen=$Len
+    local maxlen=0 modpath name len pad modname cmdlist script
+    for modpath in "$MODS_DIR"/*; do
+        [[ -d $modpath ]] || continue
+        name="${modpath##*/}"
+        len=${#name}
+        ((len > maxlen)) && maxlen=$len
     done
-    ((Pad = MaxLen + 1))
+    ((pad = maxlen + 1))
 
-    for ModPath in "$Modules"/*; do
-        [[ -d $ModPath ]] || continue
-        ModName="${ModPath##*/}"
-        CmdList=""
+    for modpath in "$MODS_DIR"/*; do
+        [[ -d $modpath ]] || continue
+        modname="${modpath##*/}"
+        cmdlist=""
 
-        for Script in "$ModPath"/*; do
-            [[ -d $Script ]] && continue
-            [[ -x $Script ]] || continue
-            [[ ${Script##*/} == *.* ]] && continue
-            CmdList="$CmdList, ${Script##*/}"
+        for script in "$modpath"/*; do
+            [[ -d $script ]] && continue
+            [[ -x $script ]] || continue
+            [[ ${script##*/} == *.* ]] && continue
+            cmdlist="$cmdlist, ${script##*/}"
         done
 
-        printf "  $GREEN%-${Pad}s$COFF %s\n" "$ModName" "${CmdList#, }"
+        printf "  $GREEN%-${pad}s$COFF %s\n" "$modname" "${cmdlist#, }"
     done
 
     exit "${1:-0}"
 }
 
-[[ -z $1 ]] && {
-    banner
-    usage 0
-}
+dispatch() {
+    [[ -z ${1:-} ]] && {
+        banner
+        usage 0
+    }
 
-Command="$1"
+    local command="$1"
+    local script="$MODS_DIR/${DEFAULT_MOD}/$command"
 
-Script="$Modules/core/$Command"
-if [[ -x $Script ]]; then
-    shift
-    export LINA_ENTRY="$Self"
-    export LINA_ACTION="$Command"
-    exec "$Script" "$@"
+    if [[ -x $script ]]; then
+        shift
 
-elif [[ -d $Modules/$Command ]]; then
-    SubCommand="$2"
-    case "$SubCommand" in
-        # 输入了模块名称, 但未提供指令
-        "" | --help | -h)
-            usage 0
-            ;;
-    esac
+        export LINA_ENTRY="$SELF"
+        export LINA_ACTION="$command"
+        exec "$script" "$@"
 
-    if [[ -x $Modules/$Command/$SubCommand ]]; then
-        shift 2
-        export LINA_ENTRY="$Self"
-        export LINA_ACTION="$Command"
-        exec "$Modules/$Command/$SubCommand" "$@"
+    elif [[ -d $MODS_DIR/$command ]]; then
+        local subcommand="$2"
+        case "$subcommand" in
+            "" | --help | -h)
+                usage 0
+                ;;
+        esac
+
+        if [[ -x $MODS_DIR/$command/$subcommand ]]; then
+            shift 2
+
+            export LINA_ENTRY="$SELF"
+            export LINA_ACTION="$command"
+            exec "$MODS_DIR/$command/$subcommand" "$@"
+        else
+            printf "'%s' 不是模块 '%s' 的指令\n" "$subcommand" "$command"
+            exit 1
+        fi
+
     else
-        printf "'%s' 不是模块 '%s' 的指令\n" "$SubCommand" "$Command"
+        printf "'%s' 不是 $SELF 中的指令或模块, 确定安装它了吗?\n" "$command"
         exit 1
     fi
+}
 
-else
-    printf "'%s' 不是 $Self 中的指令或模块, 确定安装它了吗?\n" "$Command"
-    exit 1
-fi
+main() {
+    init_ui
+    update
+    dispatch "$@"
+}
+main "$@"
