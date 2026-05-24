@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+shopt -s inherit_errexit 2> /dev/null || true
+
+SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
+SELF_DIR="${SELF_PATH%/*}" SELF_DIR="${SELF_DIR:-/}"
+
+declare -A CONFIG=(
+    [repo]="."
+    [force]=false
+    [output]=""
+    [remote]="origin"
+)
+
+usage() {
+    cat << EOF >&2
+用法: ${SELF} [选项] [参数]
+
+通用 Git 仓库更新器。
+
+选项:
+  -r, --repo <PATH=.>    指定 Git 仓库路径
+  --remote <NAME>        指定远程, 默认为 origin
+  -f, --force            即使工作区不干净也强制更新
+  -o, --output <PATH>    输出更新日志到文件
+  -h, --help             显示此帮助信息
+EOF
+    exit 1
+}
+
+check_opt_arg() {
+    local -n target_var="$1"
+    local opt_name="$2" args_count="$3" opt_val="${4:-}"
+
+    ((args_count < 2)) && {
+        printf "错误: 选项 %s 需要提供一个参数。\n" "$opt_name" >&2
+        exit 1
+    }
+    [[ $opt_val == -* ]] && {
+        printf "错误: 选项 %s 的参数不能以 '-' 开头 (得到: %s)。\n" "$opt_name" "$opt_val" >&2
+        exit 1
+    }
+    # shellcheck disable=SC2034
+    target_var="$opt_val"
+}
+
+while (($#)); do
+    case "$1" in
+        -r | --repo)
+            check_opt_arg "CONFIG[repo]" "$1" "$#" "${2:-}"
+            shift 2
+            ;;
+        -f | --force)
+            CONFIG[force]=true
+            shift
+            ;;
+        -o | --output)
+            check_opt_arg "CONFIG[output]" "$1" "$#" "${2:-}"
+            shift 2
+            ;;
+        --remote)
+            check_opt_arg "CONFIG[remote]" "$1" "$#" "${2:-}"
+            shift 2
+            ;;
+        -h | --help)
+            usage
+            ;;
+        *)
+            printf "错误: 未知选项或参数 '%s'。\n" "$1" >&2
+            usage
+            ;;
+    esac
+done
+
+# -- 切换到参数指定的仓库根目录 --
+repo_root=$(git -C "${CONFIG[repo]}" rev-parse --show-toplevel 2> /dev/null) || {
+    printf "错误: 指定的路径不是一个有效的 Git 仓库: %s\n" "${CONFIG[repo]}" >&2
+    exit 1
+}
+cd "$repo_root" || {
+    printf "错误: 无法进入仓库根目录: %s\n" "$repo_root" >&2
+    exit 1
+}
+
+# -- 仓库所需变量 --
+lock_file="$repo_root/${SELF}.lock" # 锁文件在仓库目录下
+git_branch=$(git rev-parse --abbrev-ref HEAD)
+git_remote_branch="${CONFIG[remote]}/${git_branch}" # 构造类似 origin/main
+
+# -- 检查指针正确 --
+[[ $git_branch == "HEAD" ]] && {
+    printf "错误: 当前处于 detached HEAD 状态，拒绝更新 (请先切换到某个分支)。\n" >&2
+    exit 1
+}
+
+# -- 检查干净状态 --
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    if ! ${CONFIG[force]}; then
+        printf "错误: 工作区不干净，存在未提交的修改。使用 --force 可强制继续。\n" >&2
+        exit 1
+    fi
+fi
+
+# -- 并发锁 --
+exec {lock_fd}> "$lock_file"
+if ! flock -w 3 "$lock_fd"; then
+    printf "错误: 另一个实例正在运行，等待超时，退出。\n" >&2
+    exit 1
+fi
+
+# -- 拉取最新数据 --
+if ! timeout 30 git fetch -q "${CONFIG[remote]}"; then
+    printf "错误: 无法从 %s 拉取数据 (可能网络超时或认证失败)。\n" "${CONFIG[remote]}" >&2
+    exit 1
+fi
+
+# -- 更新 --
+local_head=$(git rev-parse HEAD)
+remote_head=$(git rev-parse "$git_remote_branch" 2> /dev/null) || {
+    printf "错误: 远程分支 %s 不存在。\n" "$git_remote_branch" >&2
+    exit 1
+}
+
+if [[ $local_head == "$remote_head" ]]; then
+    if [[ -n ${CONFIG[output]} ]]; then
+        [[ -f ${CONFIG[output]} ]] && cp -f "${CONFIG[output]}" "${CONFIG[output]}.bak"
+        : > "${CONFIG[output]}"
+    fi
+    exit 0
+else
+    git reset --hard "$git_remote_branch" > /dev/null
+    if [[ -n ${CONFIG[output]} ]]; then
+        [[ -f ${CONFIG[output]} ]] && cp -f "${CONFIG[output]}" "${CONFIG[output]}.bak"
+        if ! git log --color=always --format='%C(243)[%h]%C(reset) %s' "$local_head..$git_remote_branch" > "${CONFIG[output]}" 2> /dev/null; then
+            printf "错误: 无法生成提交日志。\n" >&2
+            exit 1
+        fi
+    fi
+fi
