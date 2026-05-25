@@ -41,7 +41,7 @@ usage() {
   -o, --output <FILE>    将更新日志输出到指定文件
   -h, --help             显示此帮助信息
 EOF
-    exit 1
+    exit "${1:-0}"
 }
 
 OPTS=$(getopt -o "r:m:b:fcXo:h" -l "repo:,remote:,branch:,force,clean,clean-all,fetch-timeout:,output:,help" -n "$SELF" -- "$@") || exit 1
