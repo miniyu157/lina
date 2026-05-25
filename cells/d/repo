@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+# shellcheck shell=bash
+
+set -euo pipefail
+shopt -s inherit_errexit 2> /dev/null || true
+
+REPOS_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/repos"
+SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
+
+editor_file() {
+    local e=${EDITOR:-vim}
+    $e "$@"
+}
+
+usage() {
+    cat << EOF
+用法: ${LINA_PREFIX:-$SELF} [操作/选项]
+
+管理发行版源。
+
+操作:
+  add <URL>     添加一个源到配置文件
+  editor        使用编辑器打开配置文件
+
+选项:
+  -h, --help    显示此帮助信息
+EOF
+    exit "${1:-0}"
+}
+
+main() {
+    mkdir -p "$LINA_CONFIG_DIR"
+    [[ -e $REPOS_FILE ]] || touch "$REPOS_FILE"
+
+    local command="${1:-}"
+    case "$command" in
+        add)
+            local url="${2:-}"
+            [[ -z $url ]] && {
+                printf "错误: 指令 %s 需要一个参数。\n" "$command" >&2
+                exit 1
+            }
+
+            grep -qFx "$url" "$REPOS_FILE" && {
+                printf "错误: 源 '%s' 已存在。\n" "$url" >&2
+                exit 1
+            }
+
+            printf "%s\n" "$url" >> "$REPOS_FILE"
+            ;;
+
+        editor)
+            editor_file "$REPOS_FILE"
+            ;;
+        -h | --help)
+            usage
+            ;;
+        *)
+            usage 1
+            ;;
+    esac
+}
+
+main "$@"

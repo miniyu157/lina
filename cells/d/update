@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+
+# shellcheck shell=bash
+
+set -euo pipefail
+shopt -s inherit_errexit 2> /dev/null || true
+
+REPOS_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/repos"
+CACHE_DIR="${LINA_CONFIG_DIR:?}/distro-cache"
+SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
+INDEX_HEADER="# LINA_DISTRO_INDEX v1"
+
+usage() {
+    cat << EOF
+用法: ${LINA_PREFIX:-$SELF} [操作]
+
+获取发行版数据（更新远程源索引）。
+
+操作:
+  (无参数)    从所有已配置的源更新索引
+  -h, --help  显示此帮助信息
+EOF
+    exit "${1:-0}"
+}
+
+# 将源 URL 解析为可用于获取文件的基础 URL
+# https://github.com/owner/repo -> https://raw.githubusercontent.com/owner/repo/HEAD
+resolve_base_url() {
+    local url="$1"
+    if [[ $url =~ ^https://github\.com/([^/]+)/([^/]+) ]]; then
+        local owner="${BASH_REMATCH[1]}" repo="${BASH_REMATCH[2]}"
+        repo="${repo%.git}"
+        printf 'https://raw.githubusercontent.com/%s/%s/HEAD' "$owner" "$repo"
+    else
+        printf '%s' "$url"
+    fi
+}
+
+# 根据 URL 获取 INDEX 内容
+fetch_index() {
+    local url="$1"
+    case "$url" in
+        file://*)
+            local path="${url#file://}"
+            [[ -f $path ]] || return 1
+            cat "$path"
+            ;;
+        http://* | https://* | ftp://*)
+            curl -fsSL --connect-timeout 10 --max-time 30 "$url" 2> /dev/null || return 1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# 解析一行 INDEX 数据，输出 NAME、ARCH 和所有 VERSION
+# 格式: NAME ARCH VERSION...  # DESCRIPTION
+parse_index_line() {
+    local line="$1"
+    local data_part="${line%%#*}"
+    data_part="${data_part#"${data_part%%[![:space:]]*}"}"
+    data_part="${data_part%"${data_part##*[![:space:]]}"}"
+    [[ -z $data_part ]] && return 1
+
+    local -a fields=()
+    local f
+    for f in $data_part; do
+        fields+=("$f")
+    done
+
+    ((${#fields[@]} >= 3)) || return 1
+
+    local name="${fields[0]}"
+    local arch="${fields[1]}"
+    local versions="${fields[*]:2}"
+
+    printf 'NAME=%s\nARCH=%s\nVERSIONS=%s\n' "$name" "$arch" "$versions"
+    return 0
+}
+
+main() {
+    mkdir -p "$LINA_CONFIG_DIR" "$CACHE_DIR"
+    [[ -e $REPOS_FILE ]] || touch "$REPOS_FILE"
+
+    local command="${1:-}"
+    case "$command" in
+        -h | --help) usage ;;
+        "") ;;
+        *)
+            usage 1
+            ;;
+    esac
+
+    [[ ! -s $REPOS_FILE ]] && {
+        printf "错误: 没有配置任何源。请先添加源。\n" >&2
+        exit 1
+    }
+
+    local repo_url configured=0 succeeded=0 failed=0 update_count=0 skipped=0
+
+    # 清空旧缓存，全新重建
+    rm -f "$CACHE_DIR"/*
+
+    while IFS= read -r repo_url; do
+        [[ -z $repo_url ]] && continue
+        [[ $repo_url == "#"* ]] && continue
+        ((++configured))
+
+        local base_url
+        base_url=$(resolve_base_url "$repo_url")
+        printf "获取: %s\n" "$repo_url"
+
+        local index_content
+        index_content=$(fetch_index "${base_url}/INDEX") || {
+            printf "  警告: 无法获取 INDEX，跳过此源\n" >&2
+            ((++failed))
+            continue
+        }
+
+        # 验证格式标识
+        local first_line
+        first_line=$(head -n 1 <<< "$index_content")
+        if [[ $first_line != "$INDEX_HEADER" ]]; then
+            if [[ $first_line == "# LINA_DISTRO_INDEX v"* ]]; then
+                printf "  警告: INDEX 版本不兼容（预期 %s，实际 %s），跳过此源\n" \
+                    "$INDEX_HEADER" "$first_line" >&2
+            else
+                printf "  警告: INDEX 格式不正确（缺少版本标识），跳过此源\n" >&2
+            fi
+            ((++failed))
+            continue
+        fi
+
+        ((++succeeded))
+
+        # 解析条目
+        local line_num=0 parsed=0 line
+        while IFS= read -r line; do
+            ((++line_num))
+            [[ $line_num -eq 1 ]] && continue # 跳过格式标识行
+            [[ -z $line ]] && continue
+            [[ $line == "#"* ]] && continue
+
+            local entry_data
+            entry_data=$(parse_index_line "$line") || continue
+            ((++parsed))
+
+            local name arch versions
+            name=$(printf '%s' "$entry_data" | grep '^NAME=' | cut -d= -f2-)
+            arch=$(printf '%s' "$entry_data" | grep '^ARCH=' | cut -d= -f2-)
+            versions=$(printf '%s' "$entry_data" | grep '^VERSIONS=' | cut -d= -f2-)
+
+            # 获取描述
+            local desc=""
+            [[ $line == *"#"* ]] && desc="${line#*#}"
+            desc="${desc## }"
+
+            # 计算内容 hash，用于去重和文件命名
+            local content_hash
+            content_hash=$(printf 'SOURCE=%s\nNAME=%s\nARCH=%s\nVERSIONS=%s\nDESC=%s\n' \
+                "$base_url" "$name" "$arch" "$versions" "$desc" | md5sum)
+            content_hash="${content_hash%% *}"
+            content_hash="${content_hash:0:8}"
+
+            local cache_file="$CACHE_DIR/${name}.${arch}.${content_hash}"
+            if [[ -f $cache_file ]]; then
+                ((++skipped))
+                continue
+            fi
+
+            {
+                printf 'SOURCE=%s\n' "$base_url"
+                printf 'NAME=%s\n' "$name"
+                printf 'ARCH=%s\n' "$arch"
+                printf 'VERSIONS=%s\n' "$versions"
+                printf 'DESC=%s\n' "$desc"
+            } > "$cache_file"
+
+            printf "  %s (%s) %s\n" "$name" "$arch" "$versions"
+        done <<< "$index_content"
+
+        if ((parsed == 0)); then
+            printf "  警告: INDEX 中没有有效条目\n" >&2
+        else
+            ((update_count += parsed))
+        fi
+    done < "$REPOS_FILE"
+
+    ((configured == 0)) && {
+        printf "没有有效的源配置。\n" >&2
+        exit 1
+    }
+
+    printf "\n更新完成: %d 个源, 共 %d 个发行版条目" "$succeeded" "$update_count"
+    ((skipped > 0)) && printf ", %d 个重复跳过" "$skipped"
+    ((failed > 0)) && printf "（%d 个源失败）" "$failed"
+    printf "\n"
+
+    if ((update_count == 0)); then
+        exit 2
+    fi
+}
+
+main "$@"
