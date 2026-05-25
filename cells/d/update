@@ -5,8 +5,6 @@
 set -euo pipefail
 shopt -s inherit_errexit 2> /dev/null || true
 
-REPOS_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/repos"
-CACHE_DIR="${LINA_CONFIG_DIR:?}/distro-cache"
 SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
 INDEX_HEADER="# LINA_DISTRO_INDEX v1"
 
@@ -80,12 +78,16 @@ parse_index_line() {
 }
 
 main() {
+    [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
+
+    local REPOS_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/repos"
+    local CACHE_DIR="${LINA_CONFIG_DIR:?}/distro-cache"
+
     mkdir -p "$LINA_CONFIG_DIR" "$CACHE_DIR"
     [[ -e $REPOS_FILE ]] || touch "$REPOS_FILE"
 
     local command="${1:-}"
     case "$command" in
-        -h | --help) usage ;;
         "") ;;
         *)
             usage 1

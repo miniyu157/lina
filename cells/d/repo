@@ -5,13 +5,7 @@
 set -euo pipefail
 shopt -s inherit_errexit 2> /dev/null || true
 
-REPOS_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/repos"
 SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
-
-editor_file() {
-    local e=${EDITOR:-vim}
-    $e "$@"
-}
 
 usage() {
     cat << EOF
@@ -29,7 +23,16 @@ EOF
     exit "${1:-0}"
 }
 
+editor_file() {
+    local e=${EDITOR:-vim}
+    $e "$@"
+}
+
 main() {
+    [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
+
+    local REPOS_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/repos"
+
     mkdir -p "$LINA_CONFIG_DIR"
     [[ -e $REPOS_FILE ]] || touch "$REPOS_FILE"
 
@@ -52,9 +55,6 @@ main() {
 
         editor)
             editor_file "$REPOS_FILE"
-            ;;
-        -h | --help)
-            usage
             ;;
         *)
             usage 1
