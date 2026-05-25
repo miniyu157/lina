@@ -19,8 +19,13 @@ export LINA_VERSION="r$(git -C "$LINA_ROOT" rev-list --count HEAD)-$(git -C "$LI
 export GIT_BRANCH="$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD)"
 export MODS_DIR="$LINA_ROOT/cells"
 export DEFAULT_MOD="core"
+
 # export WORKER_DIR="/data/local/lina"
-export WORKER_DIR="$LINA_ROOT/data"
+export LINA_WORKER_DIR="$LINA_ROOT/data"
+export LINA_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/lina"
+
+mkdir -p "$LINA_WORKER_DIR"
+mkdir -p "$LINA_CONFIG_DIR"
 
 SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
 
@@ -112,8 +117,7 @@ dispatch() {
     if [[ -x $script ]]; then
         shift
 
-        export LINA_ENTRY="$SELF"
-        export LINA_ACTION="$command"
+        export LINA_PREFIX="$SELF $command"
         exec "$script" "$@"
 
     elif [[ -d $MODS_DIR/$command ]]; then
@@ -127,8 +131,7 @@ dispatch() {
         if [[ -x $MODS_DIR/$command/$subcommand ]]; then
             shift 2
 
-            export LINA_ENTRY="$SELF"
-            export LINA_ACTION="$command"
+            export LINA_PREFIX="$SELF $command $subcommand"
             exec "$MODS_DIR/$command/$subcommand" "$@"
         else
             printf "'%s' 不是模块 '%s' 的指令\n" "$subcommand" "$command"
