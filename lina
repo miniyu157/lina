@@ -2,46 +2,41 @@
 
 # shellcheck shell=bash
 # shellcheck disable=SC2155
+# shellcheck disable=SC2154
 
-# @ui COFF=0m BOLD=1m FAINT=2m ITALIC=3m ULINE=4m INVERT=7m HIDE=8m DLINE=9m
-
-# @ui RED=31m     GREEN=32m     YELLOW=33m     BLUE=34m     MAGENTA=35m     CYAN=36m     WHITE=37m GRAY=90m
-# @ui bgRED=41m   bgGREEN=42m   bgYELLOW=43m   bgBLUE=44m   bgMAGENTA=45m   bgCYAN=46m   bgWHITE=47m
-# @ui FOFF=39m BOFF=49m
-
+# -- init_ui() --
+# @ui _hl1=33m _hl2=32m _b=1m _off=0m _faint=2m _re=36;7m
 # @off
 
 set -euo pipefail
 shopt -s inherit_errexit 2> /dev/null || true
 
-export LINA_ROOT="$(dirname "$(readlink -f "$0")")"
+SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
+SELF_DIR="${SELF_PATH%/*}" SELF_DIR="${SELF_DIR:-/}"
+
+export LINA_ROOT="${SELF_DIR}"
 export LINA_VERSION="r$(git -C "$LINA_ROOT" rev-list --count HEAD)-$(git -C "$LINA_ROOT" rev-parse --short HEAD)"
+export LINA_WORKER_DIR="$LINA_ROOT/data"
+export LINA_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/lina"
+
 export GIT_BRANCH="$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD)"
 export MODS_DIR="$LINA_ROOT/cells"
 export DEFAULT_MOD="core"
 
-# export WORKER_DIR="/data/local/lina"
-export LINA_WORKER_DIR="$LINA_ROOT/data"
-export LINA_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/lina"
-
-mkdir -p "$LINA_WORKER_DIR"
-mkdir -p "$LINA_CONFIG_DIR"
-
-SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
-
 init_ui() {
-    [[ ! -t 1 && -z $FORCE_COLOR ]] && return
-    local line pair key val ansi_header=$'\e['
+    local line pair key val ansi_header=$'\e[' color_on=1
+    [[ ! -t 1 && -z ${FORCE_COLOR:-} ]] && color_on=0
     while read -r line; do
         [[ $line == "# @off"* ]] && return
         [[ $line == "# @ui "* ]] && for pair in ${line#\# @ui }; do
             key="${pair%%=*}" val="${pair#*=}"
-            declare -g "${key}=${ansi_header}${val}"
+            if ((color_on)); then
+                declare -gx "${key}=${ansi_header}${val}"
+            else
+                declare -gx "${key}="
+            fi
         done
     done < "$SELF_PATH"
-
-    export hl="${CYAN}${INVERT}"
-    export off="${COFF}"
 }
 
 update() {
@@ -72,10 +67,10 @@ banner() {
 
 usage() {
     cat << EOF
-${SELF} ${YELLOW}(${GIT_BRANCH})${COFF} ${GRAY}${LINA_VERSION}${COFF}
+${SELF} ${_hl1}(${GIT_BRANCH})${_off} ${_faint}${LINA_VERSION}${_off}
 
-${BOLD}用法: ${SELF} [模块=${DEFAULT_MOD}] <指令> [参数...]${COFF}
-${BOLD}指令:${COFF}
+${_b}用法: ${SELF} [模块=${DEFAULT_MOD}] <指令> [参数...]${_off}
+${_b}指令:${_off}
 EOF
 
     local maxlen=0 modpath name len pad modname cmdlist script
@@ -99,7 +94,7 @@ EOF
             cmdlist="$cmdlist, ${script##*/}"
         done
 
-        printf "  $GREEN%-${pad}s$COFF %s\n" "$modname" "${cmdlist#, }"
+        printf "  ${_hl2}%-${pad}s${_off} %s\n" "$modname" "${cmdlist#, }"
     done
 
     exit "${1:-0}"
@@ -121,9 +116,10 @@ dispatch() {
         exec "$script" "$@"
 
     elif [[ -d $MODS_DIR/$command ]]; then
-        local subcommand="$2"
+        local subcommand="${2:-}"
         case "$subcommand" in
             "" | --help | -h)
+                banner
                 usage 0
                 ;;
         esac
@@ -145,8 +141,11 @@ dispatch() {
 }
 
 main() {
+    mkdir -p "$LINA_WORKER_DIR" "$LINA_CONFIG_DIR"
+
     init_ui
     update
     dispatch "$@"
 }
+
 main "$@"
