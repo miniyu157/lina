@@ -52,28 +52,39 @@ fetch_index() {
     esac
 }
 
-# 解析一行 INDEX 数据，输出 NAME、ARCH 和所有 VERSION
-# 格式: NAME ARCH VERSION...  # DESCRIPTION
+# 解析一行 INDEX 数据，输出 PATH、NAME、ARCHS、VERSIONS、DESC
+# 格式: <path>,<archs>,<versions>  # <description>
 parse_index_line() {
     local line="$1"
-    local data_part="${line%%#*}"
+    local data_part desc=""
+
+    if [[ $line == *"  # "* ]]; then
+        data_part="${line%%  # *}"
+        desc="${line##*  # }"
+    elif [[ $line == *"#"* ]]; then
+        data_part="${line%%#*}"
+        desc="${line#*#}"
+        desc="${desc## }"
+    else
+        data_part="$line"
+    fi
+
     data_part="${data_part#"${data_part%%[![:space:]]*}"}"
     data_part="${data_part%"${data_part##*[![:space:]]}"}"
     [[ -z $data_part ]] && return 1
 
-    local -a fields=()
-    local f
-    for f in $data_part; do
-        fields+=("$f")
-    done
+    local path="${data_part%%,*}"
+    local rest="${data_part#*,}"
+    local archs="${rest%%,*}"
+    local versions="${rest#*,}"
 
-    ((${#fields[@]} >= 3)) || return 1
+    [[ -n $path && -n $archs && -n $versions ]] || return 1
 
-    local name="${fields[0]}"
-    local arch="${fields[1]}"
-    local versions="${fields[*]:2}"
+    local name="${path##*/}"
+    name="${name%.sh}"
 
-    printf 'NAME=%s\nARCH=%s\nVERSIONS=%s\n' "$name" "$arch" "$versions"
+    printf 'PATH_VAL=%q\nNAME=%q\nARCHS=%q\nVERSIONS=%q\nDESC_VAL=%q\n' \
+        "$path" "$name" "$archs" "$versions" "$desc"
     return 0
 }
 
@@ -136,57 +147,50 @@ main() {
 
         ((++succeeded))
 
-        # 解析条目
-        local line_num=0 parsed=0 line
+        local line_num=0 parsed=0 entries=0 line
         while IFS= read -r line; do
             ((++line_num))
-            [[ $line_num -eq 1 ]] && continue # 跳过格式标识行
+            [[ $line_num -eq 1 ]] && continue
             [[ -z $line ]] && continue
             [[ $line == "#"* ]] && continue
 
-            local entry_data
-            entry_data=$(parse_index_line "$line") || continue
+            local PATH_VAL NAME ARCHS VERSIONS DESC_VAL
+            eval "$(parse_index_line "$line")" || continue
             ((++parsed))
 
-            local name arch versions
-            name=$(printf '%s' "$entry_data" | grep '^NAME=' | cut -d= -f2-)
-            arch=$(printf '%s' "$entry_data" | grep '^ARCH=' | cut -d= -f2-)
-            versions=$(printf '%s' "$entry_data" | grep '^VERSIONS=' | cut -d= -f2-)
+            local arch
+            for arch in $ARCHS; do
+                local content_hash
+                content_hash=$(printf 'NAME=%s\nARCH=%s\nVERSIONS=%s\nDESC=%s\n' \
+                    "$NAME" "$arch" "$VERSIONS" "$DESC_VAL" | md5sum)
+                content_hash="${content_hash%% *}"
+                content_hash="${content_hash:0:8}"
 
-            # 获取描述
-            local desc=""
-            [[ $line == *"#"* ]] && desc="${line#*#}"
-            desc="${desc## }"
+                local cache_file="$CACHE_DIR/${NAME}.${arch}.${content_hash}"
+                if [[ -f $cache_file ]]; then
+                    ((++skipped))
+                    continue
+                fi
 
-            # 计算内容 hash，用于去重和文件命名
-            local content_hash
-            content_hash=$(printf 'SOURCE=%s\nNAME=%s\nARCH=%s\nVERSIONS=%s\nDESC=%s\n' \
-                "$base_url" "$name" "$arch" "$versions" "$desc" | md5sum)
-            content_hash="${content_hash%% *}"
-            content_hash="${content_hash:0:8}"
+                ((++entries))
 
-            local cache_file="$CACHE_DIR/${name}.${arch}.${content_hash}"
-            if [[ -f $cache_file ]]; then
-                ((++skipped))
-                continue
-            fi
+                {
+                    printf 'SOURCE=%s\n' "$base_url"
+                    printf 'PATH=%s\n' "$PATH_VAL"
+                    printf 'NAME=%s\n' "$NAME"
+                    printf 'ARCH=%s\n' "$arch"
+                    printf 'VERSIONS=%s\n' "$VERSIONS"
+                    printf 'DESC=%s\n' "$DESC_VAL"
+                } > "$cache_file"
 
-            {
-                printf 'SOURCE=%s\n' "$base_url"
-                printf 'NAME=%s\n' "$name"
-                printf 'ARCH=%s\n' "$arch"
-                printf 'VERSIONS=%s\n' "$versions"
-                printf 'DESC=%s\n' "$desc"
-            } > "$cache_file"
-
-            printf "  %s (%s) %s\n" "$name" "$arch" "$versions"
+                printf "  %s (%s) %s\n" "$NAME" "$arch" "$VERSIONS"
+            done
         done <<< "$index_content"
 
         if ((parsed == 0)); then
             printf "  警告: INDEX 中没有有效条目\n" >&2
-        else
-            ((update_count += parsed))
         fi
+        ((update_count += entries))
     done < "$REPOS_FILE"
 
     ((configured == 0)) && {
