@@ -6,7 +6,7 @@ set -euo pipefail
 shopt -s inherit_errexit 2> /dev/null || true
 
 SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
-INDEX_HEADER="# LINA_DISTRO_INDEX v1"
+INDEX_HEADER="# LINA_DISTRO_INDEX v2"
 
 usage() {
     cat << EOF
@@ -52,50 +52,18 @@ fetch_index() {
     esac
 }
 
-# 解析一行 INDEX 数据，输出 PATH、NAME、ARCHS、VERSIONS、DESC
-# 格式: <path>,<archs>,<versions>  # <description>
-parse_index_line() {
-    local line="$1"
-    local data_part desc=""
-
-    if [[ $line == *"  # "* ]]; then
-        data_part="${line%%  # *}"
-        desc="${line##*  # }"
-    elif [[ $line == *"#"* ]]; then
-        data_part="${line%%#*}"
-        desc="${line#*#}"
-        desc="${desc## }"
-    else
-        data_part="$line"
-    fi
-
-    data_part="${data_part#"${data_part%%[![:space:]]*}"}"
-    data_part="${data_part%"${data_part##*[![:space:]]}"}"
-    [[ -z $data_part ]] && return 1
-
-    local path="${data_part%%,*}"
-    local rest="${data_part#*,}"
-    local archs="${rest%%,*}"
-    local versions="${rest#*,}"
-
-    [[ -n $path && -n $archs && -n $versions ]] || return 1
-
-    local name="${path##*/}"
-    name="${name%.sh}"
-
-    printf 'PATH_VAL=%q\nNAME=%q\nARCHS=%q\nVERSIONS=%q\nDESC_VAL=%q\n' \
-        "$path" "$name" "$archs" "$versions" "$desc"
-    return 0
+check_version() {
+    [[ ${1:-} == "$INDEX_HEADER" ]]
 }
 
 main() {
-    [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
+    [[ ${1:-} == "-h" || ${1:-} == "--help" ]] && usage
 
     local REPOS_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/repos"
-    local CACHE_DIR="${LINA_CONFIG_DIR:?}/distro-cache"
-
-    mkdir -p "$LINA_CONFIG_DIR" "$CACHE_DIR"
+    local DB_FILE="${LINA_CONFIG_DIR:?}/local_index.tsv"
+    mkdir -p "$LINA_CONFIG_DIR"
     [[ -e $REPOS_FILE ]] || touch "$REPOS_FILE"
+    [[ -e $DB_FILE ]] || touch "$DB_FILE"
 
     local command="${1:-}"
     case "$command" in
@@ -110,102 +78,34 @@ main() {
         exit 1
     }
 
-    local repo_url configured=0 succeeded=0 failed=0 update_count=0 skipped=0
-
-    # 清空旧缓存，全新重建
-    rm -f "$CACHE_DIR"/*
+    local -A seen=()
+    local base_url index_url index_content sh_url
+    local hash path name archs versions desc
 
     while IFS= read -r repo_url; do
         [[ -z $repo_url ]] && continue
-        [[ $repo_url == "#"* ]] && continue
-        ((++configured))
 
-        local base_url
         base_url=$(resolve_base_url "$repo_url")
-        printf "获取: %s\n" "$repo_url"
+        index_url="${base_url}/INDEX"
 
-        local index_content
-        index_content=$(fetch_index "${base_url}/INDEX") || {
-            printf "  警告: 无法获取 INDEX，跳过此源\n" >&2
-            ((++failed))
+        index_content=$(fetch_index "$index_url") || {
+            printf "警告: 无法获取索引 '%s'\n" "$index_url" >&2
             continue
         }
 
-        # 验证格式标识
-        local first_line
-        first_line=$(head -n 1 <<< "$index_content")
-        if [[ $first_line != "$INDEX_HEADER" ]]; then
-            if [[ $first_line == "# LINA_DISTRO_INDEX v"* ]]; then
-                printf "  警告: INDEX 版本不兼容（预期 %s，实际 %s），跳过此源\n" \
-                    "$INDEX_HEADER" "$first_line" >&2
-            else
-                printf "  警告: INDEX 格式不正确（缺少版本标识），跳过此源\n" >&2
-            fi
-            ((++failed))
+        check_version "$(head -n1 <<< "$index_content")" || {
+            printf "警告: 索引 '%s' 版本不匹配\n" "$index_url" >&2
             continue
-        fi
+        }
 
-        ((++succeeded))
-
-        local line_num=0 parsed=0 entries=0 line
-        while IFS= read -r line; do
-            ((++line_num))
-            [[ $line_num -eq 1 ]] && continue
-            [[ -z $line ]] && continue
-            [[ $line == "#"* ]] && continue
-
-            local PATH_VAL NAME ARCHS VERSIONS DESC_VAL
-            eval "$(parse_index_line "$line")" || continue
-            ((++parsed))
-
-            local arch
-            for arch in $ARCHS; do
-                local content_hash
-                content_hash=$(printf 'NAME=%s\nARCH=%s\nVERSIONS=%s\nDESC=%s\n' \
-                    "$NAME" "$arch" "$VERSIONS" "$DESC_VAL" | md5sum)
-                content_hash="${content_hash%% *}"
-                content_hash="${content_hash:0:8}"
-
-                local cache_file="$CACHE_DIR/${NAME}.${arch}.${content_hash}"
-                if [[ -f $cache_file ]]; then
-                    ((++skipped))
-                    continue
-                fi
-
-                ((++entries))
-
-                {
-                    printf 'SOURCE=%s\n' "$base_url"
-                    printf 'PATH=%s\n' "$PATH_VAL"
-                    printf 'NAME=%s\n' "$NAME"
-                    printf 'ARCH=%s\n' "$arch"
-                    printf 'VERSIONS=%s\n' "$VERSIONS"
-                    printf 'DESC=%s\n' "$DESC_VAL"
-                } > "$cache_file"
-
-                printf "  %s (%s) %s\n" "$NAME" "$arch" "$VERSIONS"
-            done
+        while IFS=$'\t' read -r hash path name archs versions desc; do
+            [[ -z $hash || $hash == \#* ]] && continue
+            [[ -n ${seen[$hash]:-} ]] && continue
+            seen[$hash]=1
+            sh_url="${base_url}/${path}"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$hash" "$sh_url" "$name" "$archs" "$versions" "$desc"
         done <<< "$index_content"
-
-        if ((parsed == 0)); then
-            printf "  警告: INDEX 中没有有效条目\n" >&2
-        fi
-        ((update_count += entries))
-    done < "$REPOS_FILE"
-
-    ((configured == 0)) && {
-        printf "没有有效的源配置。\n" >&2
-        exit 1
-    }
-
-    printf "\n更新完成: %d 个源, 共 %d 个发行版条目" "$succeeded" "$update_count"
-    ((skipped > 0)) && printf ", %d 个重复跳过" "$skipped"
-    ((failed > 0)) && printf "（%d 个源失败）" "$failed"
-    printf "\n"
-
-    if ((update_count == 0)); then
-        exit 2
-    fi
+    done < "$REPOS_FILE" > "$DB_FILE"
 }
 
 main "$@"
