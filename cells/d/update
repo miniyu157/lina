@@ -74,7 +74,10 @@ main() {
     esac
 
     [[ ! -s $REPOS_FILE ]] && {
-        printf "错误: 没有配置任何源。请先添加源。\n" >&2
+        local update_cmd="${LINA_PREFIX:+${LINA_PREFIX} }repo"
+        printf '%b' "错误: 没有配置任何源。\n" >&2
+        # shellcheck disable=SC2154
+        printf '%b' "请先运行 ${_hl2}${update_cmd}${_off} 来更新本地索引。\n" >&2
         exit 1
     }
 
