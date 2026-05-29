@@ -8,7 +8,7 @@ shopt -s inherit_errexit 2> /dev/null || true
 
 SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
 
-: "${_hl1:=}" "${_hl2:=}" "${_b:=}" "${_off:=}" "${_faint:=}" "${_noint:=}" "${_re:=}"
+: "${_hl1:=}" "${_hl2:=}" "${_b:=}" "${_off:=}" "${_faint:=}" "${_noint:=}" "${_re:=}" "${_rev:=}" "${_off_rev:=}"
 
 usage() {
     cat << EOF
@@ -50,7 +50,7 @@ highlight_keywords() {
             fi
         done
         # shellcheck disable=SC2001
-        text=$(sed "s/${pattern}/${_b}&${_noint}/g" <<< "$text")
+        text=$(sed "s/${pattern}/${_rev}&${_off_rev}/g" <<< "$text")
     done
     printf '%s' "$text"
 }
