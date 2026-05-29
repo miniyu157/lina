@@ -8,7 +8,7 @@ shopt -s inherit_errexit 2> /dev/null || true
 
 SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
 
-: "${_hl1:=}" "${_hl2:=}" "${_b:=}" "${_off:=}" "${_faint:=}" "${_noint:=}" "${_re:=}" "${_rev:=}" "${_off_rev:=}"
+: "${_hl1:=}" "${_hl2:=}" "${_b:=}" "${_off:=}" "${_faint:=}" "${_noint:=}" "${_re:=}" "${_rev:=}" "${_off_rev:=}" "${_url:=}"
 
 usage() {
     cat << EOF
@@ -66,30 +66,48 @@ escape_glob() {
     printf '%s' "$s"
 }
 
+print_url() {
+    local url="$1" cols avail show display
+    cols=${TERM_COLS:-80}
+    avail=$((cols - 4))
+    if ((${#url} <= avail)); then
+        display="$url"
+    else
+        show=$((avail - 1))
+        display="${url:0:show}…"
+    fi
+    printf '%b' "    ${_url}\e]8;;${url}\e\\${display}\e]8;;\e\\${_off}\n"
+}
+
 print_record() {
     local name="$1" versions="$2" archs="$3" desc="$4" sh_url="$5"
     shift 5
     local keywords=("$@")
-    local hl_name hl_versions hl_archs hl_desc hl_url
+    local hl_name hl_versions hl_archs hl_desc
 
     if ((${#keywords[@]} > 0)); then
         hl_name=$(highlight_keywords "$name" "${keywords[@]}")
         hl_versions=$(highlight_keywords "$versions" "${keywords[@]}")
         hl_archs=$(highlight_keywords "$archs" "${keywords[@]}")
         hl_desc=$(highlight_keywords "$desc" "${keywords[@]}")
-        hl_url=$(highlight_keywords "$sh_url" "${keywords[@]}")
     else
         hl_name="$name" hl_versions="$versions" hl_archs="$archs"
-        hl_desc="$desc" hl_url="$sh_url"
+        hl_desc="$desc"
     fi
 
     printf '%b' "${_hl2}${_b}${hl_name}${_off}  ${_hl1}${hl_versions}${_off}  ${_faint}[${hl_archs}]${_off}\n"
     printf '%b' "    ${_faint}${hl_desc}${_off}\n"
-    printf '%b' "    ${_faint}${hl_url}${_off}\n"
+    print_url "$sh_url"
 }
 
 main() {
     [[ ${1:-} == "-h" || ${1:-} == "--help" ]] && usage
+
+    if [[ -t 1 ]]; then
+        TERM_COLS=$(tput cols < /dev/tty 2> /dev/null || stty size < /dev/tty 2> /dev/null | awk '{print $2}' || echo "${COLUMNS:-80}")
+    else
+        TERM_COLS=99999
+    fi
 
     local DB_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/local_index.tsv"
 
