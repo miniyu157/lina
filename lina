@@ -5,7 +5,7 @@
 # shellcheck disable=SC2154
 
 # -- init_ui() --
-# @ui _hl1=33m _hl2=32m _b=1m _off=0m _faint=2m _re=36;7m
+# @ui _hl1=33m _hl2=32m _b=1m _off=0m _faint=2m _noint=22m _re=36;7m
 # @off
 
 set -euo pipefail

@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+
+# shellcheck shell=bash
+# shellcheck disable=SC2154
+
+set -euo pipefail
+shopt -s inherit_errexit 2> /dev/null || true
+
+SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
+
+: "${_hl1:=}" "${_hl2:=}" "${_b:=}" "${_off:=}" "${_faint:=}" "${_noint:=}" "${_re:=}"
+
+usage() {
+    cat << EOF
+用法: ${LINA_PREFIX:-$SELF} [关键字...]
+
+在本地发行版数据库中搜索。
+支持大小写不敏感子串匹配，多个关键字为 AND 关系。
+
+示例:
+  ${LINA_PREFIX:-$SELF}                   列出所有发行版
+  ${LINA_PREFIX:-$SELF} ubuntu            搜索包含 "ubuntu" 的发行版
+  ${LINA_PREFIX:-$SELF} debian x86_64     搜索同时包含 "debian" 和 "x86_64" 的发行版
+  ${LINA_PREFIX:-$SELF} 24.04 aarch64     搜索支持 aarch64 架构的 24.04 版本
+
+操作:
+  -h, --help  显示此帮助信息
+EOF
+    exit "${1:-0}"
+}
+
+highlight_keywords() {
+    local text="$1" kw pattern char lower upper i
+    shift
+    for kw in "$@"; do
+        pattern=""
+        for ((i = 0; i < ${#kw}; i++)); do
+            char="${kw:i:1}"
+            lower="${char,,}"
+            upper="${char^^}"
+            if [[ $lower == "$upper" ]]; then
+                case "$char" in
+                    '.' | '*' | '[' | '^' | '$' | '/' | $'\\')
+                        pattern+="\\$char"
+                        ;;
+                    *) pattern+="$char" ;;
+                esac
+            else
+                pattern+="[$lower$upper]"
+            fi
+        done
+        # shellcheck disable=SC2001
+        text=$(sed "s/${pattern}/${_b}&${_noint}/g" <<< "$text")
+    done
+    printf '%s' "$text"
+}
+
+escape_glob() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\*/\\*}"
+    s="${s//\?/\\?}"
+    s="${s//\[/\\[}"
+    s="${s//\(/\\(}"
+    s="${s//\)/\\)}"
+    printf '%s' "$s"
+}
+
+print_record() {
+    local name="$1" versions="$2" archs="$3" desc="$4" sh_url="$5"
+    shift 5
+    local keywords=("$@")
+    local hl_name hl_versions hl_archs hl_desc hl_url
+
+    if ((${#keywords[@]} > 0)); then
+        hl_name=$(highlight_keywords "$name" "${keywords[@]}")
+        hl_versions=$(highlight_keywords "$versions" "${keywords[@]}")
+        hl_archs=$(highlight_keywords "$archs" "${keywords[@]}")
+        hl_desc=$(highlight_keywords "$desc" "${keywords[@]}")
+        hl_url=$(highlight_keywords "$sh_url" "${keywords[@]}")
+    else
+        hl_name="$name" hl_versions="$versions" hl_archs="$archs"
+        hl_desc="$desc" hl_url="$sh_url"
+    fi
+
+    printf '%b' "${_hl2}${_b}${hl_name}${_off}  ${_hl1}${hl_versions}${_off}  ${_faint}[${hl_archs}]${_off}\n"
+    printf '%b' "    ${_faint}${hl_desc}${_off}\n"
+    printf '%b' "    ${_faint}${hl_url}${_off}\n"
+}
+
+main() {
+    [[ ${1:-} == "-h" || ${1:-} == "--help" ]] && usage
+
+    local DB_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/local_index.tsv"
+
+    if [[ ! -s $DB_FILE ]]; then
+        local update_cmd="${SELF_PATH%/*}/update"
+        printf '%b' "数据库为空。\n" >&2
+        printf '%b' "请先运行 ${_hl2}${update_cmd}${_off} 来更新本地索引。\n" >&2
+        exit 1
+    fi
+
+    local keywords=() keywords_escaped=()
+    local kw kw_lower kw_escaped
+    for kw in "$@"; do
+        kw_lower="${kw,,}"
+        kw_escaped=$(escape_glob "$kw_lower")
+        keywords+=("$kw")
+        keywords_escaped+=("$kw_escaped")
+    done
+
+    local hash sh_url name archs versions desc line_lower
+    local match_count=0 first=1
+
+    while IFS=$'\t' read -r hash sh_url name archs versions desc; do
+        [[ -z $hash || $hash == \#* ]] && continue
+
+        if ((${#keywords[@]} > 0)); then
+            line_lower="${name} ${archs} ${versions} ${desc}"
+            line_lower="${line_lower,,}"
+            local matched=1
+            for kw in "${keywords_escaped[@]}"; do
+                [[ $line_lower == *$kw* ]] || {
+                    matched=0
+                    break
+                }
+            done
+            ((matched)) || continue
+        fi
+
+        if ((first)); then
+            if ((${#keywords[@]} > 0)); then
+                printf '%b' "${_faint}搜索: ${keywords[*]}${_off}\n"
+            else
+                local total
+                total=$(wc -l < "$DB_FILE" 2> /dev/null || echo 0)
+                printf '%b' "${_faint}表中有 ${total} 个条目：${_off}\n"
+            fi
+            first=0
+        fi
+
+        print_record "$name" "$versions" "$archs" "$desc" "$sh_url" "${keywords[@]}"
+        ((++match_count))
+    done < "$DB_FILE"
+
+    if ((match_count == 0)); then
+        printf '%b' "未找到匹配 \"${_hl1}${keywords[*]}${_off}\" 的发行版。\n"
+        exit 1
+    fi
+}
+
+main "$@"
