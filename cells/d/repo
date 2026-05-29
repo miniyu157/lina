@@ -9,7 +9,7 @@ SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
 
 usage() {
     cat << EOF
-用法: ${LINA_PREFIX:-$SELF} [操作/选项]
+用法: ${LINA_CMD:-$SELF} [操作/选项]
 
 管理发行版源。
 

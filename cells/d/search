@@ -11,16 +11,16 @@ SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
 
 usage() {
     cat << EOF
-用法: ${LINA_PREFIX:-$SELF} [关键字...]
+用法: ${LINA_CMD:-$SELF} [关键字...]
 
 在本地发行版数据库中搜索。
 支持大小写不敏感子串匹配，多个关键字为 AND 关系。
 
 示例:
-  ${LINA_PREFIX:-$SELF}                   列出所有发行版
-  ${LINA_PREFIX:-$SELF} ubuntu            搜索包含 "ubuntu" 的发行版
-  ${LINA_PREFIX:-$SELF} debian x86_64     搜索同时包含 "debian" 和 "x86_64" 的发行版
-  ${LINA_PREFIX:-$SELF} 24.04 aarch64     搜索支持 aarch64 架构的 24.04 版本
+  ${LINA_CMD:-$SELF}                   列出所有发行版
+  ${LINA_CMD:-$SELF} ubuntu            搜索包含 "ubuntu" 的发行版
+  ${LINA_CMD:-$SELF} debian x86_64     搜索同时包含 "debian" 和 "x86_64" 的发行版
+  ${LINA_CMD:-$SELF} 24.04 aarch64     搜索支持 aarch64 架构的 24.04 版本
 
 操作:
   -h, --help  显示此帮助信息
@@ -111,7 +111,8 @@ main() {
     local DB_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/local_index.tsv"
 
     if [[ ! -s $DB_FILE ]]; then
-        local update_cmd="${SELF_PATH%/*}/update"
+        local update_cmd="${LINA_PREFIX:+${LINA_PREFIX} }update"
+
         printf '%b' "数据库为空。\n" >&2
         printf '%b' "请先运行 ${_hl2}${update_cmd}${_off} 来更新本地索引。\n" >&2
         exit 1

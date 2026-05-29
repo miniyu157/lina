@@ -112,7 +112,8 @@ dispatch() {
     if [[ -x $script ]]; then
         shift
 
-        export LINA_PREFIX="$SELF $command"
+        export LINA_PREFIX="$SELF"
+        export LINA_CMD="$SELF $command"
         exec "$script" "$@"
 
     elif [[ -d $MODS_DIR/$command ]]; then
@@ -127,7 +128,8 @@ dispatch() {
         if [[ -x $MODS_DIR/$command/$subcommand ]]; then
             shift 2
 
-            export LINA_PREFIX="$SELF $command $subcommand"
+            export LINA_PREFIX="$SELF $command"
+            export LINA_CMD="$SELF $command $subcommand"
             exec "$MODS_DIR/$command/$subcommand" "$@"
         else
             printf "'%s' 不是模块 '%s' 的指令\n" "$subcommand" "$command"
