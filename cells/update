@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 # shellcheck shell=bash
-# shellcheck disable=SC2154
 
 ##
 # 获取发行版数据（更新远程源索引）。
@@ -78,6 +77,7 @@ main() {
     [[ ! -s $LINA_REPOS_FILE ]] && {
         local repo_cmd="${LINA_PREFIX:+${LINA_PREFIX} }repo"
         printf '%b' "错误: 没有配置任何源。\n" >&2
+        # shellcheck disable=SC2154
         printf '%b' "请先运行 ${_hl2}${repo_cmd}${_off} 来添加发行版源。\n" >&2
         exit 1
     }

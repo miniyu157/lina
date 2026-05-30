@@ -3,7 +3,7 @@
 # shellcheck shell=bash
 
 ##
-# 在本地发行版数据库中搜索。
+# 在本地数据库中搜索发行版镜像。
 ##
 
 set -euo pipefail
@@ -11,13 +11,11 @@ shopt -s inherit_errexit 2> /dev/null || true
 
 SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
 
-: "${_hl1:=}" "${_hl2:=}" "${_b:=}" "${_off:=}" "${_faint:=}" "${_noint:=}" "${_re:=}" "${_rev:=}" "${_off_rev:=}" "${_url:=}"
-
 usage() {
     cat << EOF
 用法: ${LINA_CMD:-$SELF} [关键字...]
 
-在本地发行版数据库中搜索。
+在本地数据库中搜索发行版镜像。
 支持大小写不敏感子串匹配，多个关键字为 AND 关系。
 
 示例:
@@ -53,6 +51,7 @@ highlight_keywords() {
             fi
         done
         # shellcheck disable=SC2001
+        # shellcheck disable=SC2154
         text=$(sed "s/${pattern}/${_rev}&${_off_rev}/g" <<< "$text")
     done
     printf '%s' "$text"
@@ -68,6 +67,7 @@ print_url() {
         show=$((avail - 1))
         display="${url:0:show}…"
     fi
+    # shellcheck disable=SC2154
     printf '%b' "    ${_url}\e]8;;${url}\e\\${display}\e]8;;\e\\${_off}\n"
 }
 
@@ -87,6 +87,7 @@ print_record() {
         hl_desc="$desc"
     fi
 
+    # shellcheck disable=SC2154
     printf '%b' "${_hl2}${_b}${hl_name}${_off}  ${_hl1}${hl_versions}${_off}  ${_faint}[${hl_archs}]${_off}\n"
     printf '%b' "    ${_faint}${hl_desc}${_off}\n"
     print_url "$sh_url"
@@ -102,7 +103,7 @@ main() {
     fi
 
     local total
-    total=$(jq 'length' "$LINA_DB_FILE" 2>/dev/null) || total=0
+    total=$(jq 'length' "$LINA_DB_FILE" 2> /dev/null) || total=0
     if ((total == 0)); then
         local update_cmd="${LINA_PREFIX:+${LINA_PREFIX} }update"
         printf '%b' "数据库为空。\n" >&2
