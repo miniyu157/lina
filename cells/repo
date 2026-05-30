@@ -2,6 +2,10 @@
 
 # shellcheck shell=bash
 
+##
+# 管理发行版源。
+##
+
 set -euo pipefail
 shopt -s inherit_errexit 2> /dev/null || true
 
@@ -29,12 +33,7 @@ editor_file() {
 }
 
 main() {
-    [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
-
-    local REPOS_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/repos"
-
-    mkdir -p "$LINA_CONFIG_DIR"
-    [[ -e $REPOS_FILE ]] || touch "$REPOS_FILE"
+    [[ ${1:-} == "-h" || ${1:-} == "--help" ]] && usage
 
     local command="${1:-}"
     case "$command" in
@@ -45,16 +44,16 @@ main() {
                 exit 1
             }
 
-            grep -qFx "$url" "$REPOS_FILE" && {
+            grep -qFx "$url" "$LINA_REPOS_FILE" && {
                 printf "错误: 源 '%s' 已存在。\n" "$url" >&2
                 exit 1
             }
 
-            printf "%s\n" "$url" >> "$REPOS_FILE"
+            printf "%s\n" "$url" >> "$LINA_REPOS_FILE"
             ;;
 
         editor)
-            editor_file "$REPOS_FILE"
+            editor_file "$LINA_REPOS_FILE"
             ;;
         *)
             usage 1

@@ -2,6 +2,10 @@
 
 # shellcheck shell=bash
 
+##
+# 在本地发行版数据库中搜索。
+##
+
 set -euo pipefail
 shopt -s inherit_errexit 2> /dev/null || true
 

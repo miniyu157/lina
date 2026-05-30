@@ -5,7 +5,7 @@
 # shellcheck disable=SC2154
 
 # -- init_ui() --
-# @ui _hl1=33m _hl2=32m _b=1m _off=0m _faint=2m _noint=22m _re=36;7m _rev=7m _off_rev=27m _url=38;5;243m
+# @ui _hl1=33m _hl2=32m _hl3=31m _b=1m _off=0m _faint=2m _noint=22m _re=36;7m _rev=7m _off_rev=27m _url=38;5;243m
 # @off
 
 set -euo pipefail
@@ -14,14 +14,16 @@ shopt -s inherit_errexit 2> /dev/null || true
 SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
 SELF_DIR="${SELF_PATH%/*}" SELF_DIR="${SELF_DIR:-/}"
 
-export LINA_ROOT="${SELF_DIR}"
-export LINA_VERSION="r$(git -C "$LINA_ROOT" rev-list --count HEAD)-$(git -C "$LINA_ROOT" rev-parse --short HEAD)"
-export LINA_WORKER_DIR="$LINA_ROOT/data"
-export LINA_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/lina"
+init_files() {
+    export LINA_WORKER_DIR="$LINA_ROOT/data"
+    export LINA_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/lina"
+    export LINA_REPOS_FILE="${LINA_CONFIG_DIR}/repos"
+    export LINA_DB_FILE="${LINA_CONFIG_DIR:?}/local_index.tsv"
 
-export GIT_BRANCH="$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD)"
-export MODS_DIR="$LINA_ROOT/cells"
-export DEFAULT_MOD="core"
+    mkdir -p "$LINA_WORKER_DIR" "$LINA_CONFIG_DIR"
+    [[ -e $LINA_REPOS_FILE ]] || touch "$LINA_REPOS_FILE"
+    [[ -e $LINA_DB_FILE ]] || touch "$LINA_DB_FILE"
+}
 
 init_ui() {
     local line pair key val ansi_header=$'\e[' color_on=1
@@ -39,7 +41,7 @@ init_ui() {
     done < "$SELF_PATH"
 }
 
-update() {
+check_update() {
     [[ -f "$LINA_ROOT/.lina-dev" ]] || {
         if [[ -s "$LINA_ROOT/update.lock" ]]; then
             echo "$SELF 上次启动时进行了更新, 更新内容是:"
@@ -65,36 +67,72 @@ banner() {
         '                                          \n'
 }
 
+summary_extract() {
+    awk '
+        /^##$/ {
+            if (!state) { state = 1; next }
+            exit
+        }
+        state {
+            sub(/^# /, "")
+            print
+        }
+    ' "$1"
+}
+
+module_usage() {
+    local mod_path="$1"
+    local mod_name="${mod_path##*/}"
+    local mod_summary=""
+    [[ -f "$mod_path/_summary" ]] && mod_summary=$(head -n1 "$mod_path/_summary")
+
+    printf '%b' "${_b}模块 ${_hl2}${mod_name}${_off}: ${mod_summary}\n\n"
+    printf '%b' "${_b}用法: ${LINA_PREFIX} <指令> [参数...]${_off}\n"
+    printf '%b' "${_b}指令:${_off}\n"
+
+    local sub sub_name sub_summary
+    for sub in "$mod_path"/*; do
+        [[ -f $sub && -x $sub ]] || continue
+        sub_name="${sub##*/}"
+        sub_summary=$(summary_extract "$sub")
+        printf "  ${_hl2}%-14s${_off} %s\n" "$sub_name" "$sub_summary"
+    done
+
+    exit 0
+}
+
 usage() {
     cat << EOF
 ${SELF} ${_hl1}(${GIT_BRANCH})${_off} ${_faint}${LINA_VERSION}${_off}
 
-${_b}用法: ${SELF} [模块=${DEFAULT_MOD}] <指令> [参数...]${_off}
+${_b}用法: ${SELF} <指令> [参数...]${_off}
 ${_b}指令:${_off}
 EOF
 
-    local maxlen=0 modpath name len pad modname cmdlist script
-    for modpath in "$MODS_DIR"/*; do
-        [[ -d $modpath ]] || continue
-        name="${modpath##*/}"
-        len=${#name}
-        ((len > maxlen)) && maxlen=$len
+    local item name summary
+    for item in "$MODS_DIR"/*; do
+        [[ -f $item && -x $item ]] || continue
+        name="${item##*/}"
+        summary=$(summary_extract "$item")
+        printf "  ${_hl2}%-12s${_off} %s\n" "$name" "$summary"
     done
-    ((pad = maxlen + 1))
 
-    for modpath in "$MODS_DIR"/*; do
-        [[ -d $modpath ]] || continue
-        modname="${modpath##*/}"
-        cmdlist=""
+    printf '\n%b' "${_b}模块:${_off}\n"
 
-        for script in "$modpath"/*; do
-            [[ -d $script ]] && continue
-            [[ -x $script ]] || continue
-            [[ ${script##*/} == *.* ]] && continue
-            cmdlist="$cmdlist, ${script##*/}"
+    local mod_summary sub sub_name sub_summary
+    for item in "$MODS_DIR"/*/; do
+        [[ -d $item ]] || continue
+        name="${item%/}"; name="${name##*/}"
+        mod_summary=""
+        [[ -f "${item}_summary" ]] && mod_summary=$(head -n1 "${item}_summary")
+        printf "  ${_hl2}%-12s${_off} %s\n" "$name" "$mod_summary"
+
+        for sub in "$item"*; do
+            [[ -f $sub && -x $sub ]] || continue
+            sub_name="${sub##*/}"
+            sub_summary=$(summary_extract "$sub")
+            printf "    ${_hl1}%-12s${_off} %s\n" "$sub_name" "$sub_summary"
         done
-
-        printf "  ${_hl2}%-${pad}s${_off} %s\n" "$modname" "${cmdlist#, }"
     done
 
     exit "${1:-0}"
@@ -106,47 +144,59 @@ dispatch() {
         usage 0
     }
 
-    local command="$1"
-    local script="$MODS_DIR/${DEFAULT_MOD}/$command"
+    local mod="$1"
+    local mod_cmd="${2:-}"
+    local path="$MODS_DIR/$mod"
 
-    if [[ -x $script ]]; then
-        shift
+    [[ $mod == "-h" || $mod == "--help" ]] && usage 0
 
+    [[ -e $path ]] || {
+        printf "%b" "${mod} 不是一个有效的 ${SELF} 指令, 请运行 ${_hl2}${SELF} --help${_off} 查看可用指令。\n" >&2
+        exit 1
+    }
+
+    if [[ -f $path && -x $path ]]; then
         export LINA_PREFIX="$SELF"
-        export LINA_CMD="$SELF $command"
-        exec "$script" "$@"
+        export LINA_CMD="$SELF $mod"
 
-    elif [[ -d $MODS_DIR/$command ]]; then
-        local subcommand="${2:-}"
-        case "$subcommand" in
-            "" | --help | -h)
-                banner
-                usage 0
-                ;;
-        esac
+        shift 1
+        exec "$path" "$@"
+    fi
 
-        if [[ -x $MODS_DIR/$command/$subcommand ]]; then
-            shift 2
+    if [[ -d $path ]]; then
+        export LINA_PREFIX="$SELF $mod"
+        export LINA_CMD="$SELF $mod $mod_cmd"
 
-            export LINA_PREFIX="$SELF $command"
-            export LINA_CMD="$SELF $command $subcommand"
-            exec "$MODS_DIR/$command/$subcommand" "$@"
-        else
-            printf "'%s' 不是模块 '%s' 的指令\n" "$subcommand" "$command"
+        [[ $mod_cmd == "-h" || $mod_cmd == "--help" ]] && module_usage "$path"
+
+        if [[ -z $mod_cmd ]]; then
+            printf "%b" "模块 ${mod} 需要一个指令, 请运行 ${_hl2}${LINA_PREFIX} --help${_off} 查看可用指令。\n" >&2
             exit 1
         fi
 
-    else
-        printf "'%s' 不是 $SELF 中的指令或模块, 确定安装它了吗?\n" "$command"
-        exit 1
+        local mod_cmd_path="$path/$mod_cmd"
+
+        [[ -f $mod_cmd_path && -x $mod_cmd_path ]] || {
+            printf "%b" "$mod_cmd 不是模块 ${mod} 的指令, 请运行 ${_hl2}${LINA_PREFIX} --help${_off} 查看可用指令。\n" >&2
+            exit 1
+        }
+
+        shift 2
+        exec "$mod_cmd_path" "$@"
+
     fi
 }
 
 main() {
-    mkdir -p "$LINA_WORKER_DIR" "$LINA_CONFIG_DIR"
+    export LINA_ROOT="${SELF_DIR}"
+    export LINA_VERSION="r$(git -C "$LINA_ROOT" rev-list --count HEAD)-$(git -C "$LINA_ROOT" rev-parse --short HEAD)"
+    export LINA_DISTROS_REPO_VERSION="3.1"
+    export GIT_BRANCH="$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD)"
+    export MODS_DIR="$LINA_ROOT/cells"
 
+    init_files
     init_ui
-    update
+    check_update
     dispatch "$@"
 }
 

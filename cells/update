@@ -2,11 +2,14 @@
 
 # shellcheck shell=bash
 
+##
+# 获取发行版数据（更新远程源索引）。
+##
+
 set -euo pipefail
 shopt -s inherit_errexit 2> /dev/null || true
 
 SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
-INDEX_HEADER="# LINA_DISTRO_INDEX v2"
 
 usage() {
     cat << EOF
@@ -53,17 +56,12 @@ fetch_index() {
 }
 
 check_version() {
-    [[ ${1:-} == "$INDEX_HEADER" ]]
+    # [[ ${1:-} == "$INDEX_HEADER" ]]
+    return 0
 }
 
 main() {
     [[ ${1:-} == "-h" || ${1:-} == "--help" ]] && usage
-
-    local REPOS_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/repos"
-    local DB_FILE="${LINA_CONFIG_DIR:?}/local_index.tsv"
-    mkdir -p "$LINA_CONFIG_DIR"
-    [[ -e $REPOS_FILE ]] || touch "$REPOS_FILE"
-    [[ -e $DB_FILE ]] || touch "$DB_FILE"
 
     local command="${1:-}"
     case "$command" in
@@ -73,7 +71,7 @@ main() {
             ;;
     esac
 
-    [[ ! -s $REPOS_FILE ]] && {
+    [[ ! -s $LINA_REPOS_FILE ]] && {
         local update_cmd="${LINA_PREFIX:+${LINA_PREFIX} }repo"
         printf '%b' "错误: 没有配置任何源。\n" >&2
         # shellcheck disable=SC2154
@@ -108,7 +106,7 @@ main() {
             sh_url="${base_url}/${path}"
             printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$hash" "$sh_url" "$name" "$archs" "$versions" "$desc"
         done <<< "$index_content"
-    done < "$REPOS_FILE" > "$DB_FILE"
+    done < "$LINA_REPOS_FILE" > "$LINA_DB_FILE"
 }
 
 main "$@"
