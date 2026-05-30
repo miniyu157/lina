@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 # shellcheck shell=bash
+# shellcheck disable=SC2154
 
 ##
 # 获取发行版数据（更新远程源索引）。
@@ -10,6 +11,8 @@ set -euo pipefail
 shopt -s inherit_errexit 2> /dev/null || true
 
 SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
+TEMP_ENTRIES=""
+trap 'rm -f "$TEMP_ENTRIES"' EXIT
 
 usage() {
     cat << EOF
@@ -24,8 +27,6 @@ EOF
     exit "${1:-0}"
 }
 
-# 将源 URL 解析为可用于获取文件的基础 URL
-# https://github.com/owner/repo -> https://raw.githubusercontent.com/owner/repo/HEAD
 resolve_base_url() {
     local url="$1"
     if [[ $url =~ ^https://github\.com/([^/]+)/([^/]+) ]]; then
@@ -37,7 +38,6 @@ resolve_base_url() {
     fi
 }
 
-# 根据 URL 获取 INDEX 内容
 fetch_index() {
     local url="$1"
     case "$url" in
@@ -56,8 +56,14 @@ fetch_index() {
 }
 
 check_version() {
-    # [[ ${1:-} == "$INDEX_HEADER" ]]
-    return 0
+    local version
+    version=$(jq -r '.version // empty' <<< "$1")
+    [[ $version == *"$LINA_DISTROS_REPO_VERSION"* ]]
+}
+
+extract_entries() {
+    local base_url="$1"
+    jq -c --arg base "$base_url" '.entries[] | . + {sh_url: ($base + "/" + .path)}'
 }
 
 main() {
@@ -66,25 +72,21 @@ main() {
     local command="${1:-}"
     case "$command" in
         "") ;;
-        *)
-            usage 1
-            ;;
+        *) usage 1 ;;
     esac
 
     [[ ! -s $LINA_REPOS_FILE ]] && {
-        local update_cmd="${LINA_PREFIX:+${LINA_PREFIX} }repo"
+        local repo_cmd="${LINA_PREFIX:+${LINA_PREFIX} }repo"
         printf '%b' "错误: 没有配置任何源。\n" >&2
-        # shellcheck disable=SC2154
-        printf '%b' "请先运行 ${_hl2}${update_cmd}${_off} 来更新本地索引。\n" >&2
+        printf '%b' "请先运行 ${_hl2}${repo_cmd}${_off} 来添加发行版源。\n" >&2
         exit 1
     }
 
-    local -A seen=()
-    local base_url index_url index_content sh_url
-    local hash path name archs versions desc
+    TEMP_ENTRIES=$(mktemp)
 
+    local base_url index_url index_content repo_url
     while IFS= read -r repo_url; do
-        [[ -z $repo_url ]] && continue
+        [[ -z $repo_url || $repo_url == \#* ]] && continue
 
         base_url=$(resolve_base_url "$repo_url")
         index_url="${base_url}/INDEX"
@@ -94,19 +96,25 @@ main() {
             continue
         }
 
-        check_version "$(head -n1 <<< "$index_content")" || {
+        jq -e '.entries' <<< "$index_content" > /dev/null 2>&1 || {
+            printf "警告: 索引 '%s' 格式无效\n" "$index_url" >&2
+            continue
+        }
+
+        check_version "$index_content" || {
             printf "警告: 索引 '%s' 版本不匹配\n" "$index_url" >&2
             continue
         }
 
-        while IFS=$'\t' read -r hash path name archs versions desc; do
-            [[ -z $hash || $hash == \#* ]] && continue
-            [[ -n ${seen[$hash]:-} ]] && continue
-            seen[$hash]=1
-            sh_url="${base_url}/${path}"
-            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$hash" "$sh_url" "$name" "$archs" "$versions" "$desc"
-        done <<< "$index_content"
-    done < "$LINA_REPOS_FILE" > "$LINA_DB_FILE"
+        extract_entries "$base_url" <<< "$index_content" >> "$TEMP_ENTRIES"
+
+    done < "$LINA_REPOS_FILE"
+
+    if [[ -s $TEMP_ENTRIES ]]; then
+        jq -s 'unique_by(.hash)' < "$TEMP_ENTRIES" > "$LINA_DB_FILE"
+    else
+        printf '[]\n' > "$LINA_DB_FILE"
+    fi
 }
 
 main "$@"

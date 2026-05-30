@@ -58,17 +58,6 @@ highlight_keywords() {
     printf '%s' "$text"
 }
 
-escape_glob() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\*/\\*}"
-    s="${s//\?/\\?}"
-    s="${s//\[/\\[}"
-    s="${s//\(/\\(}"
-    s="${s//\)/\\)}"
-    printf '%s' "$s"
-}
-
 print_url() {
     local url="$1" cols avail show display
     cols=${TERM_COLS:-80}
@@ -112,50 +101,45 @@ main() {
         TERM_COLS=99999
     fi
 
-    local DB_FILE="${LINA_CONFIG_DIR:?错误: 缺少 LINA_CONFIG_DIR 环境变量}/local_index.tsv"
-
-    if [[ ! -s $DB_FILE ]]; then
+    local total
+    total=$(jq 'length' "$LINA_DB_FILE" 2>/dev/null) || total=0
+    if ((total == 0)); then
         local update_cmd="${LINA_PREFIX:+${LINA_PREFIX} }update"
-
         printf '%b' "数据库为空。\n" >&2
         printf '%b' "请先运行 ${_hl2}${update_cmd}${_off} 来更新本地索引。\n" >&2
         exit 1
     fi
 
-    local keywords=() keywords_escaped=()
-    local kw kw_lower kw_escaped
+    local keywords=()
+    local keywords_lower=()
+    local kw
     for kw in "$@"; do
-        kw_lower="${kw,,}"
-        kw_escaped=$(escape_glob "$kw_lower")
         keywords+=("$kw")
-        keywords_escaped+=("$kw_escaped")
+        keywords_lower+=("${kw,,}")
     done
 
-    local hash sh_url name archs versions desc line_lower
+    local jq_filter
+    read -rd '' jq_filter << 'JQEOF' || true
+.[] | select(
+  . as $e |
+  ($ARGS.positional | all(
+    . as $kw |
+    ($e.name + " " + $e.desc + " " +
+     ($e.archs|join(" ")) + " " +
+     ($e.versions|join(" ")))
+    | ascii_downcase | contains($kw | ascii_downcase)
+  ))
+) | [.sh_url, .name, (.archs|join(" ")), (.versions|join(" ")), .desc] | join("\t")
+JQEOF
+
     local match_count=0 first=1
+    local sh_url name archs versions desc
 
-    while IFS=$'\t' read -r hash sh_url name archs versions desc; do
-        [[ -z $hash || $hash == \#* ]] && continue
-
-        if ((${#keywords[@]} > 0)); then
-            line_lower="${name} ${archs} ${versions} ${desc}"
-            line_lower="${line_lower,,}"
-            local matched=1
-            for kw in "${keywords_escaped[@]}"; do
-                [[ $line_lower == *$kw* ]] || {
-                    matched=0
-                    break
-                }
-            done
-            ((matched)) || continue
-        fi
-
+    while IFS=$'\t' read -r sh_url name archs versions desc; do
         if ((first)); then
             if ((${#keywords[@]} > 0)); then
                 printf '%b' "${_faint}搜索: ${keywords[*]}${_off}\n"
             else
-                local total
-                total=$(wc -l < "$DB_FILE" 2> /dev/null || echo 0)
                 printf '%b' "${_faint}表中有 ${total} 个条目：${_off}\n"
             fi
             first=0
@@ -163,7 +147,7 @@ main() {
 
         print_record "$name" "$versions" "$archs" "$desc" "$sh_url" "${keywords[@]}"
         ((++match_count))
-    done < "$DB_FILE"
+    done < <(jq -r "$jq_filter" "$LINA_DB_FILE" --args "${keywords_lower[@]}")
 
     if ((match_count == 0)); then
         printf '%b' "未找到匹配 \"${_hl1}${keywords[*]}${_off}\" 的发行版。\n"

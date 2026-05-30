@@ -18,7 +18,7 @@ init_files() {
     export LINA_WORKER_DIR="$LINA_ROOT/data"
     export LINA_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/lina"
     export LINA_REPOS_FILE="${LINA_CONFIG_DIR}/repos"
-    export LINA_DB_FILE="${LINA_CONFIG_DIR:?}/local_index.tsv"
+    export LINA_DB_FILE="${LINA_CONFIG_DIR:?}/local_index.json"
 
     mkdir -p "$LINA_WORKER_DIR" "$LINA_CONFIG_DIR"
     [[ -e $LINA_REPOS_FILE ]] || touch "$LINA_REPOS_FILE"
@@ -190,7 +190,7 @@ dispatch() {
 main() {
     export LINA_ROOT="${SELF_DIR}"
     export LINA_VERSION="r$(git -C "$LINA_ROOT" rev-list --count HEAD)-$(git -C "$LINA_ROOT" rev-parse --short HEAD)"
-    export LINA_DISTROS_REPO_VERSION="3.1"
+    export LINA_DISTROS_REPO_VERSION="v3.1"
     export GIT_BRANCH="$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD)"
     export MODS_DIR="$LINA_ROOT/cells"
 
