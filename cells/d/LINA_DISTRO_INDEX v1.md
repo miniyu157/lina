@@ -45,4 +45,3 @@ lina-distros/
 1. 创建 `distros/<name>.sh`，按上述契约实现
 2. 运行 `build_INDEX.sh > INDEX` 重新生成索引
 3. 运行 `validate.py` 验证下载链接可用性
-4. 推送仓库后，用户执行 `lina d update` 即可发现新发行版
