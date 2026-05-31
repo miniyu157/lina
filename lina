@@ -15,12 +15,16 @@ SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
 SELF_DIR="${SELF_PATH%/*}" SELF_DIR="${SELF_DIR:-/}"
 
 init_files() {
-    export LINA_WORKER_DIR="$LINA_ROOT/data"
+    export LINA_WORKER_DIR="$LINA_ROOT/containers"
+
+    export LINA_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/lina"
+    export LINA_IMAGES_DIR="${LINA_DATA_DIR}/images"
+
     export LINA_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/lina"
     export LINA_REPOS_FILE="${LINA_CONFIG_DIR}/repos"
     export LINA_DB_FILE="${LINA_CONFIG_DIR:?}/local_index.json"
 
-    mkdir -p "$LINA_WORKER_DIR" "$LINA_CONFIG_DIR"
+    mkdir -p "$LINA_WORKER_DIR" "$LINA_DATA_DIR" "$LINA_IMAGES_DIR" "$LINA_CONFIG_DIR"
     [[ -e $LINA_REPOS_FILE ]] || touch "$LINA_REPOS_FILE"
     [[ -e $LINA_DB_FILE ]] || touch "$LINA_DB_FILE"
 }
@@ -122,7 +126,8 @@ EOF
     local mod_summary sub sub_name sub_summary
     for item in "$MODS_DIR"/*/; do
         [[ -d $item ]] || continue
-        name="${item%/}"; name="${name##*/}"
+        name="${item%/}"
+        name="${name##*/}"
         mod_summary=""
         [[ -f "${item}_summary" ]] && mod_summary=$(head -n1 "${item}_summary")
         printf "  ${_hl2}%-12s${_off} %s\n" "$name" "$mod_summary"
@@ -190,7 +195,7 @@ dispatch() {
 main() {
     export LINA_ROOT="${SELF_DIR}"
     export LINA_VERSION="r$(git -C "$LINA_ROOT" rev-list --count HEAD)-$(git -C "$LINA_ROOT" rev-parse --short HEAD)"
-    export LINA_DISTROS_REPO_VERSION="v3.1"
+    export LINA_DISTROS_REPO_VERSION="v3.2"
     export GIT_BRANCH="$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD)"
     export MODS_DIR="$LINA_ROOT/cells"
 
