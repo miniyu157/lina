@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+
+# shellcheck shell=bash
+
+##
+# 在本地数据库中搜索发行版镜像。
+##
+
+set -euo pipefail
+shopt -s inherit_errexit 2> /dev/null || true
+
+SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
+
+usage() {
+    cat << EOF
+用法: ${LINA_CMD:-$SELF} [关键字...]
+
+在本地数据库中搜索发行版镜像。
+支持大小写不敏感子串匹配，多个关键字为 AND 关系。
+
+示例:
+  ${LINA_CMD:-$SELF}                   列出所有发行版
+  ${LINA_CMD:-$SELF} ubuntu            搜索包含 "ubuntu" 的发行版
+  ${LINA_CMD:-$SELF} debian x86_64     搜索同时包含 "debian" 和 "x86_64" 的发行版
+  ${LINA_CMD:-$SELF} 24.04 aarch64     搜索支持 aarch64 架构的 24.04 版本
+
+操作:
+  -h, --help  显示此帮助信息
+EOF
+    exit "${1:-0}"
+}
+
+highlight_keywords() {
+    local text="$1" kw pattern char lower upper i
+    shift
+    for kw in "$@"; do
+        pattern=""
+        for ((i = 0; i < ${#kw}; i++)); do
+            char="${kw:i:1}"
+            lower="${char,,}"
+            upper="${char^^}"
+            if [[ $lower == "$upper" ]]; then
+                case "$char" in
+                    '.' | '*' | '[' | '^' | '$' | '/' | $'\\')
+                        pattern+="\\$char"
+                        ;;
+                    *) pattern+="$char" ;;
+                esac
+            else
+                pattern+="[$lower$upper]"
+            fi
+        done
+        # shellcheck disable=SC2001
+        # shellcheck disable=SC2154
+        text=$(sed "s/${pattern}/${_rev}&${_off_rev}/g" <<< "$text")
+    done
+    printf '%s' "$text"
+}
+
+print_url() {
+    local url="$1" cols avail show display
+    cols=${TERM_COLS:-80}
+    avail=$((cols - 4))
+    if ((${#url} <= avail)); then
+        display="$url"
+    else
+        show=$((avail - 1))
+        display="${url:0:show}…"
+    fi
+    # shellcheck disable=SC2154
+    printf '%b' "    ${_url}\e]8;;${url}\e\\${display}\e]8;;\e\\${_off}\n"
+}
+
+print_record() {
+    local name="$1" versions="$2" archs="$3" desc="$4" file_url="$5"
+    shift 5
+    local keywords=("$@")
+    local hl_name hl_versions hl_archs hl_desc
+
+    local name_base="$name" name_hash=""
+    if [[ $name == *.* ]]; then
+        name_base="${name%.*}"
+        # shellcheck disable=SC2154
+        name_hash="${_faint}.${name##*.}"
+    fi
+
+    if ((${#keywords[@]} > 0)); then
+        hl_name=$(highlight_keywords "$name_base" "${keywords[@]}")
+        hl_versions=$(highlight_keywords "$versions" "${keywords[@]}")
+        hl_archs=$(highlight_keywords "$archs" "${keywords[@]}")
+        hl_desc=$(highlight_keywords "$desc" "${keywords[@]}")
+    else
+        hl_name="$name_base" hl_versions="$versions" hl_archs="$archs"
+        hl_desc="$desc"
+    fi
+
+    # shellcheck disable=SC2154
+    printf '%b' "${_hl2}${_b}${hl_name}${name_hash}${_off}  ${_hl1}${hl_versions}${_off}  ${_faint}[${hl_archs}]${_off}\n"
+    printf '%b' "    ${_faint}${hl_desc}${_off}\n"
+    print_url "$file_url"
+}
+
+main() {
+    [[ ${1:-} == "-h" || ${1:-} == "--help" ]] && usage
+
+    if [[ -t 1 ]]; then
+        TERM_COLS=$(tput cols < /dev/tty 2> /dev/null || stty size < /dev/tty 2> /dev/null | awk '{print $2}' || echo "${COLUMNS:-80}")
+    else
+        TERM_COLS=99999
+    fi
+
+    local total
+    total=$(jq 'length' "$LINA_DB_FILE" 2> /dev/null) || total=0
+    if ((total == 0)); then
+        local update_cmd="${LINA_PREFIX:+${LINA_PREFIX} }update"
+        printf '%b' "数据库为空。\n" >&2
+        printf '%b' "请先运行 ${_hl2}${update_cmd}${_off} 来更新本地索引。\n" >&2
+        exit 1
+    fi
+
+    local keywords=()
+    local keywords_lower=()
+    local kw
+    for kw in "$@"; do
+        keywords+=("$kw")
+        keywords_lower+=("${kw,,}")
+    done
+
+    local jq_filter
+    read -rd '' jq_filter << 'JQEOF' || true
+.[] | select(
+  . as $e |
+  ($ARGS.positional | all(
+    . as $kw |
+    (($e.name | sub("\\.[^.]+$"; "")) + " " + $e.desc + " " +
+     ($e.exec.options.archs | join(" ")) + " " +
+     ($e.exec.options.versions | join(" ")))
+    | ascii_downcase | contains($kw | ascii_downcase)
+  ))
+) | [
+    .exec.file,
+    .name,
+    (.exec.options.archs | join(" ")),
+    (.exec.options.versions | join(" ")),
+    .desc
+  ] | join("\t")
+JQEOF
+
+    local match_count=0 first=1
+    local file_url name archs versions desc
+
+    while IFS=$'\t' read -r file_url name archs versions desc; do
+        if ((first)); then
+            if ((${#keywords[@]} > 0)); then
+                printf '%b' "${_faint}搜索: ${keywords[*]}${_off}\n"
+            else
+                printf '%b' "${_faint}表中有 ${total} 个条目：${_off}\n"
+            fi
+            first=0
+        fi
+
+        print_record "$name" "$versions" "$archs" "$desc" "$file_url" "${keywords[@]}"
+        ((++match_count))
+    done < <(jq -r "$jq_filter" "$LINA_DB_FILE" --args "${keywords_lower[@]}")
+
+    if ((match_count == 0)); then
+        printf '%b' "未找到匹配 \"${_hl1}${keywords[*]}${_off}\" 的发行版。\n"
+        exit 1
+    fi
+}
+
+main "$@"

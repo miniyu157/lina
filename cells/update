@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+# shellcheck shell=bash
+
+##
+# 获取发行版数据（更新远程源索引）。
+##
+
+set -euo pipefail
+shopt -s inherit_errexit 2> /dev/null || true
+
+SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
+TEMP_ENTRIES=""
+trap 'rm -f "$TEMP_ENTRIES"' EXIT
+
+usage() {
+    cat << EOF
+用法: ${LINA_CMD:-$SELF} [操作]
+
+获取发行版数据（更新远程源索引）。
+
+操作:
+  (无参数)    从所有已配置的源更新索引
+  -h, --help  显示此帮助信息
+EOF
+    exit "${1:-0}"
+}
+
+resolve_base_url() {
+    local url="$1"
+    if [[ $url =~ ^https://github\.com/([^/]+)/([^/]+) ]]; then
+        local owner="${BASH_REMATCH[1]}" repo="${BASH_REMATCH[2]}"
+        repo="${repo%.git}"
+        printf 'https://raw.githubusercontent.com/%s/%s/HEAD' "$owner" "$repo"
+    else
+        printf '%s' "$url"
+    fi
+}
+
+fetch_index() {
+    local url="$1"
+    case "$url" in
+        file://*)
+            local path="${url#file://}"
+            [[ -f $path ]] || return 1
+            cat "$path"
+            ;;
+        http://* | https://* | ftp://*)
+            curl -fsSL --connect-timeout 10 --max-time 30 "$url" 2> /dev/null || return 1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+check_version() {
+    local version
+    version=$(jq -r '.version // empty' <<< "$1")
+    [[ $version == *"$LINA_DISTROS_REPO_VERSION"* ]]
+}
+
+extract_entries() {
+    local base_url="$1"
+    jq -c --arg base "$base_url" '.entries[] | .exec.file = ($base + "/" + .exec.file)'
+}
+
+main() {
+    [[ ${1:-} == "-h" || ${1:-} == "--help" ]] && usage
+
+    local command="${1:-}"
+    case "$command" in
+        "") ;;
+        *) usage 1 ;;
+    esac
+
+    [[ ! -s $LINA_REPOS_FILE ]] && {
+        local repo_cmd="${LINA_PREFIX:+${LINA_PREFIX} }repo"
+        printf '%b' "错误: 没有配置任何源。\n" >&2
+        # shellcheck disable=SC2154
+        printf '%b' "请先运行 ${_hl2}${repo_cmd}${_off} 来添加发行版源。\n" >&2
+        exit 1
+    }
+
+    TEMP_ENTRIES=$(mktemp)
+
+    local base_url index_url index_content repo_url
+    while IFS= read -r repo_url; do
+        [[ -z $repo_url || $repo_url == \#* ]] && continue
+
+        base_url=$(resolve_base_url "$repo_url")
+        index_url="${base_url}/INDEX"
+
+        index_content=$(fetch_index "$index_url") || {
+            printf "警告: 无法获取索引 '%s'\n" "$index_url" >&2
+            continue
+        }
+
+        jq -e '.entries' <<< "$index_content" > /dev/null 2>&1 || {
+            printf "警告: 索引 '%s' 格式无效\n" "$index_url" >&2
+            continue
+        }
+
+        check_version "$index_content" || {
+            printf "警告: 索引 '%s' 版本不匹配\n" "$index_url" >&2
+            continue
+        }
+
+        extract_entries "$base_url" <<< "$index_content" >> "$TEMP_ENTRIES"
+
+    done < "$LINA_REPOS_FILE"
+
+    if [[ -s $TEMP_ENTRIES ]]; then
+        jq -s 'unique_by(.name)' < "$TEMP_ENTRIES" > "$LINA_DB_FILE"
+    else
+        printf '[]\n' > "$LINA_DB_FILE"
+    fi
+}
+
+main "$@"
