@@ -71,6 +71,25 @@ banner() {
         '                                          \n'
 }
 
+die() {
+    printf '%b\n' "$*" >&2
+    exit "${2:-1}"
+}
+
+# True if basename starts with _
+_is_internal() { [[ ${1##*/} == _* ]]; }
+
+invalid_cmd() { die "${1} 不是一个有效的 ${SELF} 指令, 请运行 ${_hl2}${SELF} --help${_off} 查看可用指令。"; }
+
+# Return 0 if dir has at least one executable non-internal file
+module_has_cmd() {
+    local sub
+    for sub in "$1"/*; do
+        [[ -f $sub && -x $sub ]] && ! _is_internal "$sub" && return 0
+    done
+    return 1
+}
+
 summary_extract() {
     awk '
         /^##$/ {
@@ -98,7 +117,7 @@ module_usage() {
     for sub in "$mod_path"/*; do
         [[ -f $sub && -x $sub ]] || continue
         sub_name="${sub##*/}"
-        [[ $sub_name == _* ]] && continue
+        _is_internal "$sub_name" && continue
         sub_summary=$(summary_extract "$sub")
         printf "  ${_hl2}%-14s${_off} %s\n" "$sub_name" "$sub_summary"
     done
@@ -118,7 +137,7 @@ EOF
     for item in "$MODS_DIR"/*; do
         [[ -f $item && -x $item ]] || continue
         name="${item##*/}"
-        [[ $name == _* ]] && continue
+        _is_internal "$name" && continue
         summary=$(summary_extract "$item")
         printf "  ${_hl2}%-12s${_off} %s\n" "$name" "$summary"
     done
@@ -128,9 +147,10 @@ EOF
     local mod_summary sub sub_name sub_summary
     for item in "$MODS_DIR"/*/; do
         [[ -d $item ]] || continue
-        name="${item%/}"
-        name="${name##*/}"
-        [[ $name == _* ]] && continue
+        name="${item%/}" name="${name##*/}"
+        _is_internal "$name" && continue
+        module_has_cmd "$item" || continue
+
         mod_summary=""
         [[ -f "${item}_summary" ]] && mod_summary=$(head -n1 "${item}_summary")
         printf "  ${_hl2}%-12s${_off} %s\n" "$name" "$mod_summary"
@@ -138,7 +158,7 @@ EOF
         for sub in "$item"*; do
             [[ -f $sub && -x $sub ]] || continue
             sub_name="${sub##*/}"
-            [[ $sub_name == _* ]] && continue
+            _is_internal "$sub_name" && continue
             sub_summary=$(summary_extract "$sub")
             printf "    ${_hl1}%-12s${_off} %s\n" "$sub_name" "$sub_summary"
         done
@@ -158,45 +178,32 @@ dispatch() {
     local path="$MODS_DIR/$mod"
 
     [[ $mod == "-h" || $mod == "--help" ]] && usage 0
-    [[ $mod == _* ]] && {
-        printf "%b" "${mod} 不是一个有效的 ${SELF} 指令, 请运行 ${_hl2}${SELF} --help${_off} 查看可用指令。\n" >&2
-        exit 1
-    }
 
-    [[ -e $path ]] || {
-        printf "%b" "${mod} 不是一个有效的 ${SELF} 指令, 请运行 ${_hl2}${SELF} --help${_off} 查看可用指令。\n" >&2
-        exit 1
-    }
+    if _is_internal "$mod" || [[ ! -e $path ]] ||
+        { [[ -d $path ]] && ! module_has_cmd "$path"; }; then
+        invalid_cmd "$mod"
+    fi
 
     if [[ -f $path && -x $path ]]; then
-        export LINA_PREFIX="$SELF"
-        export LINA_CMD="$SELF $mod"
-
+        export LINA_PREFIX="$SELF" LINA_CMD="$SELF $mod"
         shift 1
         exec "$path" "$@"
     fi
 
     if [[ -d $path ]]; then
-        export LINA_PREFIX="$SELF $mod"
-        export LINA_CMD="$SELF $mod $mod_cmd"
+        export LINA_PREFIX="$SELF $mod" LINA_CMD="$SELF $mod $mod_cmd"
 
         [[ $mod_cmd == "-h" || $mod_cmd == "--help" ]] && module_usage "$path"
 
-        if [[ -z $mod_cmd ]]; then
-            printf "%b" "模块 ${mod} 需要一个指令, 请运行 ${_hl2}${LINA_PREFIX} --help${_off} 查看可用指令。\n" >&2
-            exit 1
-        fi
+        [[ -z $mod_cmd ]] &&
+            die "模块 ${mod} 需要一个指令, 请运行 ${_hl2}${LINA_PREFIX} --help${_off} 查看可用指令。"
 
         local mod_cmd_path="$path/$mod_cmd"
-
-        [[ $mod_cmd == _* ]] || [[ -f $mod_cmd_path && -x $mod_cmd_path ]] || {
-            printf "%b" "$mod_cmd 不是模块 ${mod} 的指令, 请运行 ${_hl2}${LINA_PREFIX} --help${_off} 查看可用指令。\n" >&2
-            exit 1
-        }
+        _is_internal "$mod_cmd" || [[ -f $mod_cmd_path && -x $mod_cmd_path ]] ||
+            die "$mod_cmd 不是模块 ${mod} 的指令, 请运行 ${_hl2}${LINA_PREFIX} --help${_off} 查看可用指令。"
 
         shift 2
         exec "$mod_cmd_path" "$@"
-
     fi
 }
 
