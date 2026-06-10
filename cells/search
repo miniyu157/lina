@@ -13,7 +13,7 @@ SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
 
 usage() {
     cat << EOF
-用法: ${LINA_CMD:-$SELF} [关键字...]
+用法: ${LINA_CMD:-$SELF} [选项] [关键字...]
 
 在本地数据库中搜索发行版镜像。
 支持大小写不敏感子串匹配，多个关键字为 AND 关系。
@@ -24,8 +24,8 @@ usage() {
   ${LINA_CMD:-$SELF} debian x86_64     搜索同时包含 "debian" 和 "x86_64" 的发行版
   ${LINA_CMD:-$SELF} 24.04 aarch64     搜索支持 aarch64 架构的 24.04 版本
 
-操作:
-  -h, --help  显示此帮助信息
+选项:
+  -h, --help        显示此帮助信息
 EOF
     exit "${1:-0}"
 }
@@ -58,56 +58,41 @@ highlight_keywords() {
 }
 
 print_url() {
-    local url="$1" cols avail show display
-    cols=${TERM_COLS:-80}
-    avail=$((cols - 4))
-    if ((${#url} <= avail)); then
-        display="$url"
-    else
-        show=$((avail - 1))
-        display="${url:0:show}…"
-    fi
+    local url="$1"
     # shellcheck disable=SC2154
-    printf '%b' "    ${_url}\e]8;;${url}\e\\${display}\e]8;;\e\\${_off}\n"
+    printf "    ${_url}\033]8;;%s\033\\%s\033]8;;\033\\${_off}\n" "$url" "$url"
 }
 
 print_record() {
-    local name="$1" versions="$2" archs="$3" desc="$4" file_url="$5"
-    shift 5
+    local name="$1" hash="$2" versions="$3" archs="$4" desc="$5" file_url="$6"
+    shift 6
     local keywords=("$@")
     local hl_name hl_versions hl_archs hl_desc
 
-    local name_base="$name" name_hash=""
-    if [[ $name == *.* ]]; then
-        name_base="${name%.*}"
+    local hash_display=""
+    if [[ -n $hash ]]; then
         # shellcheck disable=SC2154
-        name_hash="${_faint}.${name##*.}"
+        hash_display="${_faint}  ${hash}${_off}"
     fi
 
     if ((${#keywords[@]} > 0)); then
-        hl_name=$(highlight_keywords "$name_base" "${keywords[@]}")
+        hl_name=$(highlight_keywords "$name" "${keywords[@]}")
         hl_versions=$(highlight_keywords "$versions" "${keywords[@]}")
         hl_archs=$(highlight_keywords "$archs" "${keywords[@]}")
         hl_desc=$(highlight_keywords "$desc" "${keywords[@]}")
     else
-        hl_name="$name_base" hl_versions="$versions" hl_archs="$archs"
+        hl_name="$name" hl_versions="$versions" hl_archs="$archs"
         hl_desc="$desc"
     fi
 
     # shellcheck disable=SC2154
-    printf '%b' "${_hl2}${_b}${hl_name}${name_hash}${_off}  ${_hl1}${hl_versions}${_off}  ${_faint}[${hl_archs}]${_off}\n"
+    printf '%b' "${_hl2}${_b}${hl_name}${hash_display}${_off}  ${_hl1}${hl_versions}${_off}  ${_faint}[${hl_archs}]${_off}\n"
     printf '%b' "    ${_faint}${hl_desc}${_off}\n"
     print_url "$file_url"
 }
 
 main() {
     [[ ${1:-} == "-h" || ${1:-} == "--help" ]] && usage
-
-    if [[ -t 1 ]]; then
-        TERM_COLS=$(tput cols < /dev/tty 2> /dev/null || stty size < /dev/tty 2> /dev/null | awk '{print $2}' || echo "${COLUMNS:-80}")
-    else
-        TERM_COLS=99999
-    fi
 
     local total
     total=$(jq 'length' "$LINA_DB_FILE" 2> /dev/null) || total=0
@@ -132,16 +117,17 @@ main() {
   . as $e |
   ($ARGS.positional | all(
     . as $kw |
-    (($e.name | sub("\\.[^.]+$"; "")) + " " + $e.desc + " " +
-     ($e.exec.options.archs | join(" ")) + " " +
-     ($e.exec.options.versions | join(" ")))
+    ($e.name + " " + $e.desc + " " +
+     ($e.applet.options.archs | join(" ")) + " " +
+     ($e.applet.options.versions | join(" ")))
     | ascii_downcase | contains($kw | ascii_downcase)
   ))
 ) | [
-    .exec.file,
+    .applet.file,
     .name,
-    (.exec.options.archs | join(" ")),
-    (.exec.options.versions | join(" ")),
+    .applet.hash,
+    (.applet.options.archs | join(" ")),
+    (.applet.options.versions | join(" ")),
     .desc
   ] | join("\t")
 JQEOF
@@ -149,7 +135,7 @@ JQEOF
     local match_count=0 first=1
     local file_url name archs versions desc
 
-    while IFS=$'\t' read -r file_url name archs versions desc; do
+    while IFS=$'\t' read -r file_url name hash archs versions desc; do
         if ((first)); then
             if ((${#keywords[@]} > 0)); then
                 printf '%b' "${_faint}搜索: ${keywords[*]}${_off}\n"
@@ -159,7 +145,7 @@ JQEOF
             first=0
         fi
 
-        print_record "$name" "$versions" "$archs" "$desc" "$file_url" "${keywords[@]}"
+        print_record "$name" "$hash" "$versions" "$archs" "$desc" "$file_url" "${keywords[@]}"
         ((++match_count))
     done < <(jq -r "$jq_filter" "$LINA_DB_FILE" --args "${keywords_lower[@]}")
 

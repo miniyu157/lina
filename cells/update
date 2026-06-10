@@ -20,7 +20,6 @@ usage() {
 获取发行版数据（更新远程源索引）。
 
 操作:
-  (无参数)    从所有已配置的源更新索引
   -h, --help  显示此帮助信息
 EOF
     exit "${1:-0}"
@@ -62,7 +61,7 @@ check_version() {
 
 extract_entries() {
     local base_url="$1"
-    jq -c --arg base "$base_url" '.entries[] | .exec.file = ($base + "/" + .exec.file)'
+    jq -c --arg base "$base_url" '.entries[] | .applet.file = ($base + "/" + .applet.file)'
 }
 
 main() {
@@ -111,7 +110,7 @@ main() {
     done < "$LINA_REPOS_FILE"
 
     if [[ -s $TEMP_ENTRIES ]]; then
-        jq -s 'unique_by(.name)' < "$TEMP_ENTRIES" > "$LINA_DB_FILE"
+        jq -s 'unique_by(.applet.hash)' < "$TEMP_ENTRIES" > "$LINA_DB_FILE"
     else
         printf '[]\n' > "$LINA_DB_FILE"
     fi

@@ -210,7 +210,7 @@ dispatch() {
 main() {
     export LINA_ROOT="${SELF_DIR}"
     export LINA_VERSION="r$(git -C "$LINA_ROOT" rev-list --count HEAD)-$(git -C "$LINA_ROOT" rev-parse --short HEAD)"
-    export LINA_DISTROS_REPO_VERSION="v1"
+    export LINA_DISTROS_REPO_VERSION="v3"
     export GIT_BRANCH="$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD)"
     export MODS_DIR="$LINA_ROOT/cells"
 
