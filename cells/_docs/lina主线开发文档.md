@@ -46,16 +46,61 @@ lina 客户端可以添加多个上游数据仓库，仓库源还可以设置为
 
 （目前处于 bash 原型机阶段，未来使用 go/rust 重构）
 
-lina repo     可以新增发行版，editor 直接打开编辑器，一行一个 URL。
+lina repo     可以新增发行版源，editor 直接打开编辑器，一行一个 URL。
               存储到本地 repos 文件
 
 lina update   将一个或多个源的 INDEX 聚合到本地数据库。
-              遍历本地 repos 文件，解析 URL，拉取 INDEX（v3,v3.1 标准为 JSON 格式），
-              自动新增字段名称 sh_url 作为 .sh 的直链（由 source 和 path 字段组合得到）。
+              遍历本地 repos 文件，解析 URL，拉取仓库索引文件 INDEX（JSON 格式）
+              数据处理:
+                  原地将 `entries[].exec.file` 字段结合源 URL 拼凑为小程序直链。
 
 lina search   根据关键字搜索，支持多关键字做AND操作。
+              搜索逻辑:
+                  对于 `entries[].name` 字段，去除末尾追加的 hash 进行搜索。
 
-lina pull     <distro>[:version] [--arch <ARCH>]
+lina pull     拉取发行版，处理内容寻址和本地镜像索引。
+              用法:
+                  <distro>[:version] [--arch <ARCH>] [--mirror <URL>]
+
+              参数处理:
+                  在本地数据库中，匹配 distro 发行版名称，数据库中 `entries[].name` 字段的值形如 `alpine.bbe502c`，
+                  可以传入不带 hash 的完整发行版名称，也可以传入带 hash 的完整字段名称。
+                  需要进行匹配，若只传入例如 `alpine`，若只存在一项则自动补全 hash（完整字段名称） 为后续处理做准备。
+                  若存在多项，需要报错并列出所有符合完整名称的发行版，列出完整 hash，以便用户精确指定。
+
+                  :version 参数可选，若未提供，则自动选择 `entries[].exec.options.versions[0]`（数组中第一个版本）。
+                  提供时需要验证是否为 `entries[].exec.options.versions` 数组中的项，否则报错退出。
+
+                  --arch 选项可选，若未提供，则自动使用 uname -m 获取。
+                  需要验证是否为 `entries[].exec.options.archs` 数组中的项，否则报错退出。
+
+                  --mirror 选项可选，若提供，需要验证是否为 `entries[].exec.options.mirrors` 数组中的项，否则报错退出。
+                  若未提供，需要检查是否为终端交互环境，
+                  若为非终端交互环境，则表示不提供 mirror；
+                  若为终端交互环境，则弹出弹出 fzf 菜单，列出 `entries[].exec.options.mirrors` 数组以供选择，
+                  在菜单中额外加入一个 auto，表示不提供 mirror。用户如果中断选择界面也表示不提供 mirror。
+                  
+              拉取:
+                  下载发行版（`entries[].exec.file`）的小程序后，需要传入位置参数以获取发行版文件直链。
+                  发行版小程序用法: "get <version> <arch> [mirror]"
+                  传入根据上述参数处理得到的 version、arch、mirror，
+                  等待标准输出，需要处理超时。
+                  输出结果的 JSON 形如：
+                  ```
+                  {
+                    "src": "https://mirrors.tuna.tsinghua.edu.cn/archlinux/iso/latest/archlinux-bootstrap-2026.06.01-x86_64.tar.zst",
+                    "hash_val": "sha256:e68ba918c9f7deede8eccd2cd8ce259df104d84b0791cff3a2bc7579ced34849"
+                  }
+                  ```
+                  其中 hash_val 的值为 "算法:文件hash" 或者 "SKIP"。
+
+                  下载 src 到 images 文件夹的 mktemp文件夹，下载完成后，根据 hash_val 校验文件完整性。
+                  成功后，存储到 images/blob/算法_文件hash（不带后缀），若 hash_val 为 SKIP，则自动获取 sha256 进行存储。
+
+                  下载完成后，在 images 文件夹下操作索引，为下载的发行版文件存储元数据
+                  包括
+                  
+                  
               选项:
                 distro    发行版名称
                           在本地数据库中，需要查找 name 字段，可能包含多个 name 字段，
