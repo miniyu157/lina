@@ -133,18 +133,20 @@ ${_b}用法: ${SELF} <指令> [参数...]${_off}
 ${_b}指令:${_off}
 EOF
 
-    local item name summary
+    local item name summary has_cmd=0
     for item in "$MODS_DIR"/*; do
         [[ -f $item && -x $item ]] || continue
         name="${item##*/}"
         _is_internal "$name" && continue
         summary=$(summary_extract "$item")
         printf "  ${_hl2}%-12s${_off} %s\n" "$name" "$summary"
+        has_cmd=1
     done
+    ((has_cmd)) || printf "  ${_faint}暂无可用指令${_off}\n"
 
     printf '\n%b' "${_b}模块:${_off}\n"
 
-    local mod_summary sub sub_name sub_summary
+    local mod_summary sub sub_name sub_summary has_mod=0
     for item in "$MODS_DIR"/*/; do
         [[ -d $item ]] || continue
         name="${item%/}" name="${name##*/}"
@@ -162,7 +164,9 @@ EOF
             sub_summary=$(summary_extract "$sub")
             printf "    ${_hl1}%-12s${_off} %s\n" "$sub_name" "$sub_summary"
         done
+        has_mod=1
     done
+    ((has_mod)) || printf "  ${_faint}暂无可用模块${_off}\n"
 
     exit "${1:-0}"
 }
@@ -209,9 +213,19 @@ dispatch() {
 
 main() {
     export LINA_ROOT="${SELF_DIR}"
-    export LINA_VERSION="r$(git -C "$LINA_ROOT" rev-list --count HEAD)-$(git -C "$LINA_ROOT" rev-parse --short HEAD)"
+
+    local git_count git_hash git_branch
+    git_count=$(git -C "$LINA_ROOT" rev-list --count HEAD 2>/dev/null || true)
+    git_hash=$(git -C "$LINA_ROOT" rev-parse --short HEAD 2>/dev/null || true)
+    git_branch=$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+
+    if [[ -n "$git_count" && -n "$git_hash" ]]; then
+        export LINA_VERSION="r${git_count}-${git_hash}"
+    else
+        export LINA_VERSION="unknown"
+    fi
+    export GIT_BRANCH="${git_branch:-unknown}"
     export LINA_DISTROS_REPO_VERSION="v3"
-    export GIT_BRANCH="$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD)"
     export MODS_DIR="$LINA_ROOT/cells"
 
     init_files
