@@ -11,22 +11,45 @@
 set -euo pipefail
 shopt -s inherit_errexit 2> /dev/null || true
 
-SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
-SELF_DIR="${SELF_PATH%/*}" SELF_DIR="${SELF_DIR:-/}"
+is_android() {
+    [[ -n ${ANDROID_ROOT:-} ]] && return 0
+    command -v getprop &> /dev/null && return 0
+    [[ -f /system/build.prop ]] && return 0
+    local uname_o
+    uname_o=$(uname -o 2> /dev/null) && [[ $uname_o == "Android" ]] && return 0
+    return 1
+}
 
 init_files() {
-    export LINA_WORKER_DIR="$LINA_ROOT/containers"
-
     export LINA_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/lina"
     export LINA_IMAGES_DIR="${LINA_DATA_DIR}/images"
+    if is_android; then
+        export LINA_STATIC_DIR="/data/local/lina"
+    else
+        export LINA_STATIC_DIR="${LINA_DATA_DIR}/static"
+    fi
 
     export LINA_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/lina"
     export LINA_REPOS_FILE="${LINA_CONFIG_DIR}/repos"
     export LINA_DB_FILE="${LINA_CONFIG_DIR:?}/local_index.json"
 
-    mkdir -p "$LINA_WORKER_DIR" "$LINA_DATA_DIR" "$LINA_IMAGES_DIR" "$LINA_CONFIG_DIR"
+    mkdir -p "$LINA_STATIC_DIR" "$LINA_DATA_DIR" "$LINA_IMAGES_DIR" "$LINA_CONFIG_DIR"
     [[ -e $LINA_REPOS_FILE ]] || touch "$LINA_REPOS_FILE"
     [[ -e $LINA_DB_FILE ]] || touch "$LINA_DB_FILE"
+}
+
+init_git_vars() {
+    local git_count git_hash git_branch
+    git_count=$(git -C "$LINA_ROOT" rev-list --count HEAD 2> /dev/null || true)
+    git_hash=$(git -C "$LINA_ROOT" rev-parse --short HEAD 2> /dev/null || true)
+    git_branch=$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD 2> /dev/null || true)
+
+    if [[ -n $git_count && -n $git_hash ]]; then
+        export LINA_VERSION="r${git_count}-${git_hash}"
+    else
+        export LINA_VERSION="unknown"
+    fi
+    export GIT_BRANCH="${git_branch:-unknown}"
 }
 
 init_ui() {
@@ -142,7 +165,7 @@ EOF
         printf "  ${_hl2}%-12s${_off} %s\n" "$name" "$summary"
         has_cmd=1
     done
-    ((has_cmd)) || printf "  ${_faint}暂无可用指令${_off}\n"
+    ((has_cmd)) || printf '%b' "  ${_faint}暂无可用指令${_off}\n"
 
     printf '\n%b' "${_b}模块:${_off}\n"
 
@@ -166,7 +189,7 @@ EOF
         done
         has_mod=1
     done
-    ((has_mod)) || printf "  ${_faint}暂无可用模块${_off}\n"
+    ((has_mod)) || printf '%b' "  ${_faint}暂无可用模块${_off}\n"
 
     exit "${1:-0}"
 }
@@ -212,26 +235,18 @@ dispatch() {
 }
 
 main() {
+    SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
+    SELF_DIR="${SELF_PATH%/*}" SELF_DIR="${SELF_DIR:-/}"
+
     export LINA_ROOT="${SELF_DIR}"
-
-    local git_count git_hash git_branch
-    git_count=$(git -C "$LINA_ROOT" rev-list --count HEAD 2>/dev/null || true)
-    git_hash=$(git -C "$LINA_ROOT" rev-parse --short HEAD 2>/dev/null || true)
-    git_branch=$(git -C "$LINA_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
-
-    if [[ -n "$git_count" && -n "$git_hash" ]]; then
-        export LINA_VERSION="r${git_count}-${git_hash}"
-    else
-        export LINA_VERSION="unknown"
-    fi
-    export GIT_BRANCH="${git_branch:-unknown}"
     export LINA_DISTROS_REPO_VERSION="v3"
     export MODS_DIR="$LINA_ROOT/cells"
 
-    init_files
     init_ui
+    init_git_vars
+    init_files
     check_update
     dispatch "$@"
 }
 
-main "$@"
+[[ ${BASH_SOURCE[0]} != "$0" ]] || main "$@"
