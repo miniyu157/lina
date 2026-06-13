@@ -9,11 +9,11 @@
 set -euo pipefail
 shopt -s inherit_errexit 2> /dev/null || true
 
-SELF_PATH=$(realpath "${BASH_SOURCE[0]}") SELF="${SELF_PATH##*/}"
-
 usage() {
+    local self_path
+    self_path=$(realpath "${BASH_SOURCE[0]}") self="${self_path##*/}"
     cat << EOF
-用法: ${LINA_CMD:-$SELF} [操作/选项]
+用法: ${LINA_CMD:-$self} [操作/选项]
 
 管理发行版源。
 
@@ -39,6 +39,8 @@ main() {
     case "$command" in
         add)
             local url="${2:-}"
+            url="${url#"${url%%[![:space:]]*}"}"
+            url="${url%"${url##*[![:space:]]}"}"
             [[ -z $url ]] && {
                 printf "错误: 指令 %s 需要一个参数。\n" "$command" >&2
                 exit 1

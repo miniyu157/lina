@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+
+# shellcheck shell=bash
+
+##
+# 拉取发行版镜像到本地。
+##
+
+set -euo pipefail
+shopt -s inherit_errexit 2> /dev/null || true
+
+usage() {
+    local self_path
+    self_path=$(realpath "${BASH_SOURCE[0]}") self="${self_path##*/}"
+    cat << EOF
+用法: ${LINA_CMD:-$self} <distro>[:version] [--arch <ARCH>] [--mirror <URL>]
+
+拉取发行版镜像到本地。
+
+参数:
+  <distro>[:version]   发行版名称或哈希[:版本]
+  --arch <ARCH>        目标架构 (默认: 本机架构)
+  --mirror <URL>       镜像源 URL (默认: 自动选择)
+
+选项:
+  -h, --help          显示此帮助信息
+EOF
+    exit "${1:-0}"
+}
+
+# Return 0 if $1 is in the JSON array on stdin
+in_array() {
+    local val="$1"
+    jq -e --arg v "$val" 'any(.[]; . == $v)' > /dev/null 2>&1
+}
+
+# Resolve distro to a single entry JSON object
+resolve_distro() {
+    local query="$1" matches count
+    matches=$(jq -c --arg q "$query" '
+        [.[] | select(.name == $q or .applet.hash == $q)]
+    ' "$LINA_DB_FILE")
+
+    count=$(jq 'length' <<< "$matches")
+
+    if ((count == 0)); then
+        printf "错误: 未找到 '%s' 对应的发行版。\n" "$query" >&2
+        local search_cmd="${LINA_PREFIX:+${LINA_PREFIX} }search"
+        # shellcheck disable=SC2154
+        printf '%b' "请运行 ${_hl2}${search_cmd}${_off} 查看可用发行版。\n" >&2
+        exit 1
+    fi
+
+    if ((count > 1)); then
+        printf "错误: 存在多个同名 '%s' 的条目，请使用哈希指定:\n" "$query" >&2
+        jq -r '.[] | "  \(.name)  \(.applet.hash)  \(.applet.file)"' <<< "$matches" >&2
+        exit 1
+    fi
+
+    printf '%s' "$(jq -c '.[0]' <<< "$matches")"
+}
+
+# Resolve version/mirror: validate explicit value or auto-select first
+resolve_option() {
+    local entry="$1" field="$2" explicit_val="${3:-}" label="$4"
+    local options_json
+
+    options_json=$(jq '.applet.options.'"$field" <<< "$entry")
+
+    if [[ -n $explicit_val ]]; then
+        if in_array "$explicit_val" <<< "$options_json"; then
+            printf '%s' "$explicit_val"
+            return 0
+        fi
+        # shellcheck disable=SC2154
+        printf '%b' "错误: ${label} ${_hl1}${explicit_val}${_off} 不在可选范围内。\n" >&2
+        printf '%b' "可选: $(jq -r 'join(", ")' <<< "$options_json")\n" >&2
+        exit 1
+    fi
+
+    printf '%s' "$(jq -r '.[0]' <<< "$options_json")"
+}
+
+main() {
+    [[ ${1:-} == "-h" || ${1:-} == "--help" ]] && usage
+
+    # -- Parse arguments --
+    local distro_arg="" version_arg="" arch_arg="" mirror_arg=""
+    local update_cmd="${LINA_PREFIX:+${LINA_PREFIX} }update"
+
+    while (($# > 0)); do
+        case "$1" in
+            --arch)
+                arch_arg="${2:-}"
+                [[ -z $arch_arg ]] && {
+                    printf '%b' "错误: --arch 需要参数。\n" >&2
+                    exit 1
+                }
+                shift 2
+                ;;
+            --mirror)
+                mirror_arg="${2:-}"
+                [[ -z $mirror_arg ]] && {
+                    printf '%b' "错误: --mirror 需要参数。\n" >&2
+                    exit 1
+                }
+                shift 2
+                ;;
+            -*)
+                usage 1
+                ;;
+            *)
+                distro_arg="$1"
+                shift
+                ;;
+        esac
+    done
+
+    [[ -z $distro_arg ]] && usage
+
+    if [[ $distro_arg == *:* ]]; then
+        version_arg="${distro_arg##*:}"
+        distro_arg="${distro_arg%:*}"
+    fi
+
+    # -- Validate database --
+    local total
+    total=$(jq 'length' "$LINA_DB_FILE" 2> /dev/null) || total=0
+    if ((total == 0)); then
+        printf '%b' "数据库为空。\n" >&2
+        printf '%b' "请先运行 ${_hl2}${update_cmd}${_off} 更新本地索引。\n" >&2
+        exit 1
+    fi
+
+    # -- Resolve --
+    local entry
+    entry=$(resolve_distro "$distro_arg")
+
+    arch_arg="${arch_arg:-$(uname -m)}"
+    if ! in_array "$arch_arg" <<< "$(jq '.applet.options.archs' <<< "$entry")"; then
+        printf '%b' "错误: 架构 ${_hl1}${arch_arg}${_off} 不在可选范围内。\n" >&2
+        printf '%b' "可选: $(jq -r '.applet.options.archs | join(", ")' <<< "$entry")\n" >&2
+        exit 1
+    fi
+
+    version_arg=$(resolve_option "$entry" "versions" "$version_arg" "版本")
+    mirror_arg=$(resolve_option "$entry" "mirrors" "$mirror_arg" "镜像源")
+    local name
+    name=$(jq -r .name <<< "$entry")
+
+    # shellcheck disable=SC2154
+    cat << EOF
+发行版: ${_hl1}${name}${_off}
+版本:    ${_hl1}${version_arg}${_off}
+架构:    ${_hl1}${arch_arg}${_off}
+镜像源:  ${_url}${mirror_arg}${_off}
+EOF
+}
+
+main "$@"

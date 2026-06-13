@@ -44,41 +44,40 @@ lina 客户端可以添加多个上游数据仓库，仓库源还可以设置为
 
 ## 客户端 CLI 设计
 
-（目前处于 bash 原型机阶段，未来使用 go/rust 重构）
+目前处于 bash 原型机阶段，未来使用 go/rust 重构。
+发行版小程序接口及仓库索引规范，可以参考本地仓库 ../lina-distros/SPEC.md 文件。
 
-lina repo     可以新增发行版源，editor 直接打开编辑器，一行一个 URL。
-              存储到本地 repos 文件
+*lina repo:*
+可以新增发行版源，editor 直接打开编辑器，一行一个 URL。
+存储到本地 repos 文件（例如 ~/.config/lina/repos），为一行一个 URL 的简洁格式。
 
-lina update   将一个或多个源的 INDEX 聚合到本地数据库。
-              遍历本地 repos 文件，解析 URL，拉取仓库索引文件 INDEX（JSON 格式）
-              数据处理:
-                  原地将 `entries[].exec.file` 字段结合源 URL 拼凑为小程序直链。
+*lina update:*
+遍历 repos 文件，从每个有效的仓库拉取仓库索引文件，聚合到本地数据库（例如 ~/.config/lina/local_index.json）。
+会根据仓库索引的 entries[].applet.hash 去重，原地将 entries[].applet.file 由相对路径结合仓库 URL 拼凑为绝对路径。
+丢弃顶层 version 和 entries 包装，条目直接构成顶层 JSON 数组。
 
-lina search   根据关键字搜索，支持多关键字做AND操作。
-              搜索逻辑:
-                  对于 `entries[].name` 字段，去除末尾追加的 hash 进行搜索。
+*lina search:*
+根据关键字搜索，支持多关键字做 AND 操作。
 
-lina pull     拉取发行版，处理内容寻址和本地镜像索引。
-              用法:
-                  <distro>[:version] [--arch <ARCH>] [--mirror <URL>]
+*lina pull:*
+拉取发行版镜像到本地。
+用法: <distro>[:version] [--arch <ARCH>] [--mirror <URL>]
+参数处理: 需要拿到 DISTRO、VERSION、ARCH、MIRROR
+  distro 必选，得到 DISTRO；
+    使用 DISTRO 在本地数据库中匹配 [].name 或者 [].applet.hash 是否存在，
+    若不存在，则报错退出，提示用户可以使用 lina search 列出或在所有发行版中搜索。
+    边界情况:
+      若本地数据库中存在多个相同 [].name 的条目，
+      需要弹出 fzf 菜单以供选择（列出 [].name、[].applet.hash、[].applet.file 等辨识数据），
+      若为非终端环境，则以非零状态码报错退出，然后列出冲突的条目和辨识数据。
+  :version 和 --mirror 可选
+    若显式指定，需要验证 [].options 中对应的数组中是否存在，若不存在，则报错退出并列出可选项。
+    未显式指定时，若为非终端环境，则自动选择 [].options.versions[0] 和 [].options.mirrors[0] 得到 VERSION 和 MIRROR，
+      若为终端环境，则为缺失的参数分别弹出 fzf 菜单，列出 [].options 中对应的数组以供选择（提供一个 auto 项目），表示自动选择数组第一项。
+  --arch 可选，若未提供，则自动运行 uname -m 获取架构，得到 ARCH，
+    无论是手动还是自动选择，都需要验证 [].options.archs[] 中是否存在对应 ARCH，若不存在，则报错退出并列出可选项。
+操作:
 
-              参数处理:
-                  在本地数据库中，匹配 distro 发行版名称，数据库中 `entries[].name` 字段的值形如 `alpine.bbe502c`，
-                  可以传入不带 hash 的完整发行版名称，也可以传入带 hash 的完整字段名称。
-                  需要进行匹配，若只传入例如 `alpine`，若只存在一项则自动补全 hash（完整字段名称） 为后续处理做准备。
-                  若存在多项，需要报错并列出所有符合完整名称的发行版，列出完整 hash，以便用户精确指定。
-
-                  :version 参数可选，若未提供，则自动选择 `entries[].exec.options.versions[0]`（数组中第一个版本）。
-                  提供时需要验证是否为 `entries[].exec.options.versions` 数组中的项，否则报错退出。
-
-                  --arch 选项可选，若未提供，则自动使用 uname -m 获取。
-                  需要验证是否为 `entries[].exec.options.archs` 数组中的项，否则报错退出。
-
-                  --mirror 选项可选，若提供，需要验证是否为 `entries[].exec.options.mirrors` 数组中的项，否则报错退出。
-                  若未提供，需要检查是否为终端交互环境，
-                  若为非终端交互环境，则表示不提供 mirror；
-                  若为终端交互环境，则弹出弹出 fzf 菜单，列出 `entries[].exec.options.mirrors` 数组以供选择，
-                  在菜单中额外加入一个 auto，表示不提供 mirror。用户如果中断选择界面也表示不提供 mirror。
                   
               拉取:
                   下载发行版（`entries[].exec.file`）的小程序后，需要传入位置参数以获取发行版文件直链。
